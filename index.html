@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>投资管理平台</title>
 <style>
 :root{
@@ -237,6 +237,58 @@ body{
   width:100%;max-width:360px;background:#fff;border-radius:14px;
   padding:28px 24px;box-shadow:0 8px 30px rgba(16,24,40,.12);
 }
+/* ===== 手机端适配（v0.8.0）：≤768px 启用，桌面样式零改动 ===== */
+@media (max-width:768px){
+  body{padding:12px 12px 48px;font-size:15px}
+  .topbar{flex-wrap:wrap}
+  .topbar h1{width:100%;margin-bottom:8px}
+  .topbar-actions{width:100%;margin-left:0;flex-wrap:wrap;gap:8px}
+  #btnExportJson,#btnImportJson{display:none}
+  .btn{padding:9px 14px;font-size:14px}
+  .btn.chip{padding:7px 12px;font-size:13px}
+  .summary{grid-template-columns:1fr;gap:10px;margin:14px 0}
+  .sum-card:nth-child(-n+2){display:none}
+  .tabs{gap:0}
+  .tab{flex:1;text-align:center;padding:12px 0;font-size:15px}
+  .plan-head{display:none}
+  .plan-cards{gap:10px}
+  .plan-card{flex:1 1 150px;min-width:150px;max-width:none}
+  .holding-head{gap:8px;padding:10px 12px}
+  .holding-actions [data-act="edit"]{display:none}
+  .holding:not(.fund) .holding-body{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:12px 8px;padding:12px}
+  .holding:not(.fund) .stat:nth-child(1){display:none}
+  .holding:not(.fund) .stat:nth-child(2){grid-area:1/1}
+  .holding:not(.fund) .stat:nth-child(3){grid-area:1/2}
+  .holding:not(.fund) .stat:nth-child(6){grid-area:1/3}
+  .holding:not(.fund) .stat:nth-child(7){grid-area:1/4}
+  .holding:not(.fund) .stat:nth-child(4){grid-area:2/1/3/3}
+  .holding:not(.fund) .stat:nth-child(5){grid-area:2/3/3/5}
+  .holding.fund .holding-body{
+    display:grid;grid-template-columns:repeat(3,1fr);gap:12px 8px;padding:12px}
+  .holding{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+  .toolbar{flex-wrap:wrap}
+  .toolbar .tool-label:first-of-type,
+  #sortDate,#sortCode,#btnExportCsv{display:none}
+  #txFilter{flex:1;max-width:240px;font-size:16px}
+  .tx-table{min-width:0}
+  .tx-table th:nth-child(3),.tx-table td:nth-child(3),
+  .tx-table th:nth-child(4),.tx-table td:nth-child(4),
+  .tx-table th:nth-child(8),.tx-table td:nth-child(8),
+  .tx-table th:nth-child(9),.tx-table td:nth-child(9){display:none}
+  .tx-table th,.tx-table td{padding:8px 4px}
+  .alloc-row{flex-direction:column;align-items:stretch;gap:10px}
+  .alloc-name,.alloc-bars,.alloc-nums{width:100%;min-width:0}
+  .alloc-nums{text-align:left}
+  .alloc-line .lbl{width:auto;text-align:left}
+  .modal-head{padding:12px 14px}
+  .modal-body{padding:14px}
+  .modal-foot{padding:10px 14px calc(10px + env(safe-area-inset-bottom))}
+  .form-grid{grid-template-columns:1fr;gap:10px}
+  .form-item input,.form-item select,.toolbar select,.topbar select{font-size:16px}
+  .batch-table input{width:90px;font-size:16px}
+  #toast{bottom:calc(28px + env(safe-area-inset-bottom));max-width:92vw}
+}
 </style>
 </head>
 <body>
@@ -367,6 +419,7 @@ let txFilterCode = '';
 let toastTimer = null;
 let corruptBackup = false;
 let sb = null;
+const mqMobile = window.matchMedia ? window.matchMedia('(max-width:768px)') : { matches: false, addEventListener() {}, addListener() {} };
 try {
   if (window.supabase && typeof window.supabase.createClient === 'function' && SUPABASE_URL && SUPABASE_KEY) {
     sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -716,6 +769,76 @@ function initDragSort() {
     applyReorder(id, targetId);
   });
 }
+/* 手机端长按拖动排序（v0.8.0）：复用 computeOrderAfterDrop/applyReorder，仅 touch 指针生效 */
+function initTouchDragSort() {
+  const list = el('holdingList');
+  let g = null;
+  function clearHint() {
+    if (g && g.hintEl) { g.hintEl.classList.remove('drop-hint'); g.hintEl = null; }
+  }
+  function reset(swallow) {
+    if (!g) return;
+    clearTimeout(g.timer);
+    if (g.hintEl) g.hintEl.classList.remove('drop-hint');
+    if (g.active) {
+      g.card.classList.remove('dragging');
+      g.card.style.transform = '';
+      g.card.style.pointerEvents = '';
+    }
+    const wasActive = g.active, id = g.id, beforeId = g.beforeId || null;
+    g = null;
+    if (wasActive) {
+      if (swallow) {
+        const kill = ev => { ev.stopPropagation(); ev.preventDefault(); };
+        list.addEventListener('click', kill, { capture: true, once: true });
+        setTimeout(() => list.removeEventListener('click', kill, { capture: true }), 400);
+      }
+      return { id, beforeId };
+    }
+    return null;
+  }
+  list.addEventListener('touchstart', e => {
+    if (g || !e.touches.length) return;
+    const t = e.touches[0];
+    const card = e.target.closest('.holding[data-id]');
+    if (!card || e.target.closest('button')) return;
+    g = { card, id: card.dataset.id, sx: t.clientX, sy: t.clientY,
+          timer: setTimeout(() => {
+            if (!g) return;
+            g.active = true;
+            g.card.classList.add('dragging');
+            g.card.style.pointerEvents = 'none';
+          }, 300), active: false, hintEl: null, beforeId: null };
+  }, { passive: true });
+  list.addEventListener('touchmove', e => {
+    if (!g) return;
+    const t = e.touches[0];
+    if (!g.active) {
+      if (Math.abs(t.clientY - g.sy) > 10 || Math.abs(t.clientX - g.sx) > 10) reset(false);
+      return;
+    }
+    e.preventDefault();
+    g.card.style.transform = 'translateY(' + (t.clientY - g.sy) + 'px)';
+    const hit = document.elementFromPoint(t.clientX, t.clientY);
+    const over = hit && hit.closest ? hit.closest('.holding[data-id]') : null;
+    if (over && over !== g.card) {
+      if (g.hintEl !== over) { clearHint(); g.hintEl = over; over.classList.add('drop-hint'); }
+      g.beforeId = over.dataset.id;
+    } else {
+      clearHint();
+      const rect = list.getBoundingClientRect();
+      if (t.clientY > rect.bottom - 24) { g.toEnd = true; g.beforeId = null; }
+      else { g.toEnd = false; g.beforeId = null; }
+    }
+  }, { passive: false });
+  list.addEventListener('touchend', () => {
+    if (!g) return;
+    const moved = g.active && (g.hintEl || g.toEnd);
+    const r = reset(true);
+    if (moved && r) applyReorder(r.id, r.beforeId);
+  });
+  list.addEventListener('touchcancel', () => reset(false));
+}
 function codeOf(t) { const h = getHolding(t.holdingId); return h ? h.code : ''; }
 function opInfo(t) {
   if (t.type === 'buy') return { txt: '买入', c: 'up' };
@@ -828,7 +951,7 @@ function cardHTML(h) {
       '<button class="btn chip sell" data-act="sell">卖出</button>';
   }
   const body = isFund ? fundBodyHTML(h) : cardBodyHTML(h);
-  return '<div class="holding' + (h.cleared ? ' cleared' : '') + '" data-id="' + h.id + '" draggable="true">' +
+  return '<div class="holding' + (isFund ? ' fund' : '') + (h.cleared ? ' cleared' : '') + '" data-id="' + h.id + '" draggable="true">' +
     '<div class="holding-head">' +
       '<div class="holding-title">' +
         '<span class="idx num">' + h.order + '</span>' +
@@ -884,7 +1007,7 @@ function renderTransactions() {
     const type = h.type || 'etf';
     const op = opInfo(t);
     return '<tr data-id="' + t.id + '">' +
-      '<td class="num">' + esc(t.date) + '</td>' +
+      '<td class="num">' + (mqMobile.matches ? esc(shortDate(t.date)) : esc(t.date)) + '</td>' +
       '<td class="' + op.c + '">' + op.txt + '</td>' +
       '<td class="num">' + esc(h.code || '') + '</td>' +
       '<td>' + esc(h.name || '') + '</td>' +
@@ -1844,6 +1967,9 @@ function bindEvents() {
   });
 
   initDragSort();
+  initTouchDragSort();
+  if (mqMobile.addEventListener) mqMobile.addEventListener('change', renderAll);
+  else if (mqMobile.addListener) mqMobile.addListener(renderAll);
 
   el('btnRefresh').onclick = openRefreshModal;
   el('btnNewHolding').onclick = openNewHoldingModal;
