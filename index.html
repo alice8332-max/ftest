@@ -16,6 +16,12 @@
   --down:#4caf50;
   --accent:#2f6fed;
   --warn:#f57c00;
+  /* 定投参考档位色（独立命名空间，不与行情涨跌语义混用） */
+  --lv-green:#2e7d32;   /* 2X */
+  --lv-lgreen:#558b2f;  /* 1.5X */
+  --lv-neutral:#607d8b; /* 1X */
+  --lv-orange:#f57c00;  /* 0X暂停 */
+  --lv-red:#c62828;     /* 0X止盈 */
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{
@@ -237,6 +243,37 @@ body{
   width:100%;max-width:360px;background:#fff;border-radius:14px;
   padding:28px 24px;box-shadow:0 8px 30px rgba(16,24,40,.12);
 }
+/* ===== 定投参考（v0.9.0）===== */
+.mon-card{
+  background:var(--card);border:1px solid var(--line);border-radius:10px;
+  padding:14px 18px;margin-bottom:14px;box-shadow:0 1px 3px rgba(16,24,40,.05);
+}
+.mon-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.mon-title{font-size:15px;font-weight:600}
+.mon-title .muted{font-weight:400;font-size:12px;margin-left:6px}
+.mon-verdict{display:flex;align-items:center;gap:12px;padding:8px 0 10px;flex-wrap:wrap}
+.lv-badge{
+  display:inline-block;font-size:20px;font-weight:700;color:#fff;
+  border-radius:8px;padding:4px 16px;letter-spacing:.5px;
+}
+.lv-green{background:var(--lv-green)}
+.lv-lgreen{background:var(--lv-lgreen)}
+.lv-neutral{background:var(--lv-neutral)}
+.lv-orange{background:var(--lv-orange)}
+.lv-red{background:var(--lv-red)}
+.lv-gray{background:#9aa1ac}
+.mult-note{font-size:13px;color:var(--muted);font-weight:600}
+.mon-table{width:100%;border-collapse:collapse;font-size:13px}
+.mon-table td{padding:5px 6px;border-top:1px dashed var(--line)}
+.mon-table td:first-child{color:var(--muted);width:38%}
+.mon-table .val{font-weight:600;text-align:right;width:26%}
+.mon-table .asof{color:var(--muted);font-size:11px;text-align:right}
+.stale{opacity:.45}
+.mon-reason{margin-top:9px;padding-top:8px;border-top:1px solid var(--line);
+  font-size:12px;color:var(--muted);line-height:1.7}
+.src-note{font-size:11px;color:#a0a6b0;margin:6px 2px 0;line-height:1.7}
+.mon-empty{padding:28px;text-align:center;color:var(--muted);font-size:13px}
+
 /* ===== 手机端适配（v0.8.0）：≤768px 启用，桌面样式零改动 ===== */
 @media (max-width:768px){
   body{padding:12px 12px 48px;font-size:15px}
@@ -288,6 +325,11 @@ body{
   .form-item input,.form-item select,.toolbar select,.topbar select{font-size:16px}
   .batch-table input{width:90px;font-size:16px}
   #toast{bottom:calc(28px + env(safe-area-inset-bottom));max-width:92vw}
+  /* 定投参考 */
+  .mon-card{padding:12px 14px}
+  .mon-head{margin-bottom:8px}
+  .mon-table td:first-child{width:42%}
+  .mon-table .val{width:auto}
 }
 </style>
 </head>
@@ -319,6 +361,7 @@ body{
     <button class="tab active" data-tab="holdings">当前持仓</button>
     <button class="tab" data-tab="transactions">交易流水</button>
     <button class="tab" data-tab="alloc">资产配置</button>
+    <button class="tab" data-tab="monitor">定投参考</button>
   </nav>
 
   <main id="view-holdings" class="view active" data-view="holdings">
@@ -356,6 +399,16 @@ body{
 
   <main id="view-alloc" class="view" data-view="alloc">
     <div id="allocContent"></div>
+  </main>
+
+  <main id="view-monitor" class="view" data-view="monitor">
+    <div class="section-head">
+      <h2>定投参考</h2>
+      <div class="grow"></div>
+      <button id="btnMonRefreshAll" class="btn ghost">全部刷新</button>
+    </div>
+    <div id="monitorList"></div>
+    <p class="src-note" id="monitorSrcNote"></p>
   </main>
 </div>
 
@@ -401,6 +454,7 @@ const SYNC_KEY = 'invSyncMeta_v1';
 const SUPABASE_TABLE = 'investment_data';
 const SUPABASE_URL = 'https://gqjbtbxtkiptjeryqawd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_xAbx5HkUJCMssWBtPWzgCw_9UDQNrc2';
+const MONITOR_SECRET = ''; // 定投参考：与 Supabase Edge Function 的 MONITOR_SECRET 一致（防滥用共享串，非保密）
 const FEE_RATE = 0.0001;
 const FEE_MIN = 5;
 
@@ -489,6 +543,7 @@ function defaultState() {
     transactions: [],
     plans: [],
     activePlanId: null,
+    monitoring: {},
     settings: { quoteAutoSec: 0 }
   };
 }
@@ -526,6 +581,7 @@ function loadState() {
     data.transactions = Array.isArray(data.transactions) ? data.transactions : [];
     data.plans = Array.isArray(data.plans) ? data.plans : [];
     data.activePlanId = data.activePlanId || null;
+    if (!data.monitoring || typeof data.monitoring !== 'object' || Array.isArray(data.monitoring)) data.monitoring = {};
     normalizeSettings(data);
     reorderLegacySeed(data);
     migrateFund(data);
@@ -1036,6 +1092,7 @@ function renderAll() {
   renderFilterOptions();
   renderTransactions();
   renderAlloc();
+  renderMonitor();
 }
 
 function openModal(opts) {
@@ -1632,7 +1689,7 @@ function normalizeImport(data) {
     };
   });
   const activePlanId = data.activePlanId ? (idMap[data.activePlanId] || null) : null;
-  const norm = { holdings, transactions, plans, activePlanId, settings: (data.settings && typeof data.settings === 'object') ? data.settings : {} };
+  const norm = { holdings, transactions, plans, activePlanId, monitoring: (data.monitoring && typeof data.monitoring === 'object' && !Array.isArray(data.monitoring)) ? data.monitoring : {}, settings: (data.settings && typeof data.settings === 'object') ? data.settings : {} };
   normalizeSettings(norm);
   reorderLegacySeed(norm);
   migrateFund(norm);
@@ -1932,6 +1989,254 @@ function renderAlloc() {
     '<div class="alloc-list">' + (listHtml || '<div class="empty">暂无参与计划的标的</div>') + '</div>';
 }
 
+/* ===================== 定投参考（v0.9.0 · V4里程碑） =====================
+   配置驱动声明式规则引擎：新增标的只需扩展 MONITOR_CONFIGS + Edge Function 注册表
+   数据流：monitor_data 表(Supabase) --读--> state.monitoring 缓存 --> 前端判定
+          卡片[刷新] --> Edge Function fetch-monitor 现场抓取 --> upsert 表 + 更新缓存
+   ======================================================================== */
+
+const MONITOR_TABLE = 'monitor_data';
+
+function op(type, key, arg) { return { type, key, arg }; }
+function evalCond(c, v) {
+  const x = v[c.key];
+  if (!Number.isFinite(x)) return false;
+  switch (c.type) {
+    case 'gt': return x > c.arg;
+    case 'ge': return x >= c.arg;
+    case 'lt': return x < c.arg;
+    case 'le': return x <= c.arg;
+    case 'between': return x >= c.arg[0] && x < c.arg[1];
+    default: return false;
+  }
+}
+function evalNode(node, v) {
+  if (!node) return false;
+  if (Array.isArray(node.all)) return node.all.every(c => evalCond(c, v));
+  if (Array.isArray(node.any)) return node.any.some(c => evalCond(c, v));
+  return evalCond(node, v);
+}
+
+const MONITOR_CONFIGS = {
+  '510880': {
+    name: '红利ETF',
+    levels: {
+      takeprofit: { label: '0X止盈', mult: 0, cls: 'lv-red' },
+      pause: { label: '0X暂停', mult: 0, cls: 'lv-orange' },
+      base: { label: '1X', mult: 1, cls: 'lv-neutral' },
+      boost: { label: '1.5X', mult: 1.5, cls: 'lv-lgreen' },
+      max: { label: '2X', mult: 2, cls: 'lv-green' },
+      incomplete: { label: '数据不全', mult: null, cls: 'lv-gray' }
+    },
+    indicators: [
+      { key: 'divYield', label: '上证红利指数股息率', unit: '%', digits: 2, staleDays: 14 },
+      { key: 'cb10y', label: '10年期国债收益率', unit: '%', digits: 2, staleDays: 10 },
+      { key: 'pbPct', label: 'PB百分位（近似口径）', unit: '%', digits: 2, staleDays: 14, approx: true }
+    ],
+    derived: [
+      {
+        key: 'erp', label: 'ERP股权风险溢价', unit: '%', digits: 2,
+        needs: ['divYield', 'cb10y'], formula: v => round2(v.divYield - v.cb10y)
+      }
+    ],
+    rules: [
+      { level: 'takeprofit', reason: 'PB>75% 且 ERP<1.5% 且 股息率<3.5%（止盈矩阵触发）',
+        when: { all: [op('gt', 'pbPct', 75), op('lt', 'erp', 1.5), op('lt', 'divYield', 3.5)] } },
+      { level: 'max', reason: 'ERP≥3.8% 或 PB百分位<30%（双倍投入区）',
+        when: { any: [op('ge', 'erp', 3.8), op('lt', 'pbPct', 30)] } },
+      { level: 'boost', reason: 'ERP∈[3.0%,3.8%) 或 PB百分位∈[30%,45%)',
+        when: { any: [op('ge', 'erp', 3.0), op('between', 'pbPct', [30, 45])] } },
+      { level: 'base', reason: 'ERP∈[2.0%,3.0%) 且 PB百分位∈[45%,65%)（正常定投）',
+        when: { all: [op('ge', 'erp', 2.0), op('lt', 'erp', 3.0), op('ge', 'pbPct', 45), op('lt', 'pbPct', 65)] } },
+      { level: 'pause', reason: 'ERP∈[1.5%,2.0%) 或 PB百分位∈[65%,75%)（暂停定投）',
+        when: { any: [op('between', 'erp', [1.5, 2]), op('between', 'pbPct', [65, 75])] } }
+    ],
+    defaultLevel: 'pause',
+    defaultReason: '各指标均未落入上述任何区间，按手册保守处理为暂停档',
+    veto: [
+      { capTo: 'base', caps: ['max', 'boost'], reason: '股息率<4.0% 触发否决项，高倍数强制降档至1X',
+        when: { all: [op('lt', 'divYield', 4.0)] } }
+    ],
+    srcNotes: [
+      '股息率、PB百分位：蛋卷基金估值接口（股息率溯源于中证指数官方披露；PB百分位为其自算近似口径，非Wind近10年精确口径）',
+      '10年期国债收益率：中债登「中债国债收益率曲线」（财政部委托发布，与手册 CB10Y 同源）',
+      'ERP 为本平台按公式（股息率−10Y国债）实时计算，非第三方合成数据'
+    ]
+  }
+};
+
+function evaluateMonitor(code) {
+  const cfg = MONITOR_CONFIGS[code];
+  if (!cfg) return null;
+  const snap = (state.monitoring || {})[code];
+  const v = {}, missing = [];
+  cfg.indicators.forEach(ind => {
+    const x = snap && snap.values ? snap.values[ind.key] : undefined;
+    if (Number.isFinite(x)) v[ind.key] = x; else missing.push(ind.label);
+  });
+  (cfg.derived || []).forEach(d => {
+    if (d.needs.every(k => Number.isFinite(v[k]))) v[d.key] = d.formula(v);
+    else missing.push(d.label);
+  });
+  if (missing.length) {
+    return { level: 'incomplete', mult: null, missing,
+      reasons: ['缺少指标：' + missing.join('、') + '，数据不全无法判定'] };
+  }
+  const reasons = [];
+  let lvl = null, hitReason = '';
+  for (const r of cfg.rules) {
+    if (evalNode(r.when, v)) { lvl = r.level; hitReason = r.reason; break; }
+  }
+  if (!lvl) { lvl = cfg.defaultLevel; hitReason = cfg.defaultReason; }
+  for (const vt of (cfg.veto || [])) {
+    if (vt.caps.includes(lvl) && evalNode(vt.when, v)) {
+      reasons.push('⚠ 否决：' + vt.reason);
+      lvl = vt.capTo;
+    }
+  }
+  reasons.unshift(hitReason);
+  return { level: lvl, mult: cfg.levels[lvl].mult, missing: [], reasons };
+}
+
+function parseMonDate(s) {
+  if (!s) return NaN;
+  s = String(s);
+  let m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]).getTime();
+  m = /^(\d{2})-(\d{2})/.exec(s);
+  if (m) {
+    const y = new Date().getFullYear();
+    let t = new Date(y, +m[1] - 1, +m[2]).getTime();
+    if (t > Date.now() + 7 * 86400000) t -= 365 * 86400000;
+    return t;
+  }
+  return NaN;
+}
+function monRowHtml(cfg, ind, snap) {
+  const x = snap && snap.values ? snap.values[ind.key] : undefined;
+  const has = Number.isFinite(x);
+  const rawDate = (snap && snap.dates && snap.dates[ind.key]) ||
+    (snap && snap.fetchedAt ? String(snap.fetchedAt).slice(5, 10) : '');
+  const stale = has && snap && monIsStale(snap, ind);
+  return '<tr><td>' + esc(ind.label) + '</td>' +
+    '<td class="val num' + (stale ? ' stale' : '') + '">' + (has ? x.toFixed(ind.digits) + ind.unit : '—') + '</td>' +
+    '<td class="asof">' + esc(rawDate) + '</td></tr>';
+}
+function monIsStale(snap, ind) {
+  const t = parseMonDate((snap.dates && snap.dates[ind.key]) || snap.fetchedAt);
+  return Number.isFinite(t) && (Date.now() - t) > ind.staleDays * 86400000;
+}
+function monCardHtml(code) {
+  const cfg = MONITOR_CONFIGS[code];
+  const snap = (state.monitoring || {})[code];
+  let body;
+  if (!snap || !Object.keys(snap.values || {}).length) {
+    body = '<div class="mon-verdict"><span class="lv-badge lv-gray">无数据</span>' +
+      '<span class="mult-note">点击右上角 [刷新] 拉取监测数据</span></div>';
+  } else {
+    const ev = evaluateMonitor(code);
+    const lv = cfg.levels[ev.level] || cfg.levels.incomplete;
+    body = '<div class="mon-verdict">' +
+      '<span class="lv-badge ' + lv.cls + '">' + esc(lv.label) + '</span>' +
+      '<span class="mult-note">' + (ev.mult === null ? '—' : '本月定投 ' + ev.mult + ' 倍金额') + '</span></div>';
+    const rows = cfg.indicators.map(i => monRowHtml(cfg, i, snap)).join('');
+    const dRows = (cfg.derived || []).map(d => {
+      const x = evaluateMonitorDerivedVal(d, code);
+      return '<tr><td>' + esc(d.label) + '</td><td class="val num">' +
+        (Number.isFinite(x) ? x.toFixed(d.digits) + d.unit : '—') + '</td><td class="asof">自动计算</td></tr>';
+    }).join('');
+    body += '<table class="mon-table">' + rows + dRows + '</table>';
+    if (ev.reasons.length) {
+      body += '<div class="mon-reason">判定依据：' + ev.reasons.map(esc).join('<br>') + '</div>';
+    }
+  }
+  return '<div class="mon-card" data-code="' + esc(code) + '">' +
+    '<div class="mon-head"><span class="mon-title">' + esc(cfg.name) +
+    '<span class="muted num">' + esc(code) + '</span></span>' +
+    '<div class="grow"></div>' +
+    '<button class="btn ghost" data-act="refreshMon" data-code="' + esc(code) + '">⟳ 刷新</button></div>' +
+    body + '</div>';
+}
+function evaluateMonitorDerivedVal(d, code) {
+  const snap = (state.monitoring || {})[code];
+  const v = {};
+  d.needs.forEach(k => { v[k] = snap && snap.values ? snap.values[k] : undefined; });
+  return d.needs.every(k => Number.isFinite(v[k])) ? d.formula(v) : NaN;
+}
+function renderMonitorSrcNote() {
+  const notes = [];
+  Object.values(MONITOR_CONFIGS).forEach(c => { (c.srcNotes || []).forEach(n => notes.push(n)); });
+  const box = el('monitorSrcNote');
+  if (box) box.innerHTML = '数据口径说明 — ' + notes.map(esc).join('；') +
+    '。数字旁为来源日期，灰色表示超过时效阈值（见配置），仅提示不警告。';
+}
+function renderMonitor() {
+  const list = el('monitorList');
+  if (!list) return;
+  if (!sb) {
+    list.innerHTML = '<div class="mon-empty">云端未连接：登录云同步并部署监测服务后，「定投参考」可用。<br>详见项目目录 supabase-monitor/03_部署指引.md</div>';
+    renderMonitorSrcNote();
+    return;
+  }
+  list.innerHTML = Object.keys(MONITOR_CONFIGS).map(monCardHtml).join('');
+  renderMonitorSrcNote();
+}
+let monitorLoaded = false;
+async function lazyLoadMonitor() {
+  renderMonitor();
+  if (monitorLoaded || !sb) return;
+  monitorLoaded = true;
+  await loadMonitorData();
+  renderMonitor();
+}
+async function loadMonitorData() {
+  try {
+    const { data, error } = await sb.from(MONITOR_TABLE).select('id,payload,meta,fetched_at');
+    if (error) throw error;
+    (data || []).forEach(r => {
+      state.monitoring[r.id] = {
+        values: r.payload || {},
+        dates: (r.meta && typeof r.meta === 'object') ? (r.meta.dates || {}) : {},
+        fetchedAt: r.fetched_at || ''
+      };
+    });
+  } catch (e) {
+    console.warn('monitor_data 读取失败:', e);
+  }
+}
+const monRefreshing = {};
+async function refreshMonitor(code, btn) {
+  if (!sb) { toast('云端未连接'); return; }
+  if (monRefreshing[code]) return;
+  monRefreshing[code] = true;
+  const oldHtml = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.textContent = '刷新中…'; }
+  try {
+    const { data, error } = await sb.functions.invoke('fetch-monitor', {
+      headers: { 'x-mon-secret': MONITOR_SECRET },
+      body: { symbols: [code] }
+    });
+    if (error) throw error;
+    const r = data && Array.isArray(data.results) ? data.results[0] : null;
+    if (!r || !r.ok) throw new Error((r && r.errors && r.errors.join(';')) || '抓取失败');
+    state.monitoring[code] = {
+      values: r.values || {},
+      dates: (r.meta && typeof r.meta === 'object') ? (r.meta.dates || {}) : {},
+      fetchedAt: data.fetchedAt || new Date().toISOString()
+    };
+    save();
+    toast(code + ' 监测数据已更新');
+  } catch (e) {
+    const msg = String(e.message || e);
+    toast(msg.includes('unauthorized') ? '刷新失败：MONITOR_SECRET 校验不过' : '刷新失败：' + msg);
+  } finally {
+    delete monRefreshing[code];
+    if (btn) { btn.disabled = false; btn.innerHTML = oldHtml || '⟳ 刷新'; }
+    renderMonitor();
+  }
+}
+/* =================== 定投参考 END =================== */
+
 function bindEvents() {
   document.addEventListener('click', e => {
     const t = e.target;
@@ -1948,8 +2253,20 @@ function bindEvents() {
     b.onclick = () => {
       document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === b));
       document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.dataset.view === b.dataset.tab));
+      if (b.dataset.tab === 'monitor') lazyLoadMonitor();
     };
   });
+
+  el('monitorList').addEventListener('click', e => {
+    const btn = e.target.closest('[data-act="refreshMon"]');
+    if (!btn) return;
+    refreshMonitor(btn.dataset.code, btn);
+  });
+  el('btnMonRefreshAll').onclick = async function () {
+    for (const code of Object.keys(MONITOR_CONFIGS)) {
+      await refreshMonitor(code, null);
+    }
+  };
 
   el('holdingList').addEventListener('click', e => {
     const btn = e.target.closest('button[data-act]');
