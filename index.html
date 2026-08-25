@@ -22,6 +22,7 @@
   --lv-neutral:#607d8b; /* 1X */
   --lv-orange:#f57c00;  /* 0X暂停 */
   --lv-red:#c62828;     /* 0X止盈 */
+  --lv-yellow:#f9a825;  /* 0.5X */
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{
@@ -261,6 +262,7 @@ body{
 .lv-neutral{background:var(--lv-neutral)}
 .lv-orange{background:var(--lv-orange)}
 .lv-red{background:var(--lv-red)}
+.lv-yellow{background:var(--lv-yellow)}
 .lv-gray{background:#9aa1ac}
 .mult-note{font-size:13px;color:var(--muted);font-weight:600}
 .mon-table{width:100%;border-collapse:collapse;font-size:13px}
@@ -271,6 +273,8 @@ body{
 .stale{opacity:.45}
 .mon-reason{margin-top:9px;padding-top:8px;border-top:1px solid var(--line);
   font-size:12px;color:var(--muted);line-height:1.7}
+.mon-warn{background:rgba(245,124,0,.08);border:1px solid rgba(245,124,0,.35);
+  color:#b45309;border-radius:8px;padding:8px 12px;font-size:12px;line-height:1.7;margin-top:10px}
 .src-note{font-size:11px;color:#a0a6b0;margin:6px 2px 0;line-height:1.7}
 .mon-empty{padding:28px;text-align:center;color:var(--muted);font-size:13px}
 
@@ -330,6 +334,7 @@ body{
   .mon-head{margin-bottom:8px}
   .mon-table td:first-child{width:42%}
   .mon-table .val{width:auto}
+  .mon-warn{padding:7px 10px;font-size:11.5px}
 }
 </style>
 </head>
@@ -2061,6 +2066,84 @@ const MONITOR_CONFIGS = {
       '股息率、PB百分位：蛋卷基金估值接口（股息率溯源于中证指数官方披露；PB百分位为其自算近似口径，非Wind近10年精确口径）',
       '10年期国债收益率：中债登「中债国债收益率曲线」（财政部委托发布，与手册 CB10Y 同源）',
       'ERP 为本平台按公式（股息率−10Y国债）实时计算，非第三方合成数据'
+    ],
+    // 纳指ETF（手册 v3.5 四层逻辑；刷新即全量判定，减仓仅提示不联动持仓）
+    // 第一层 rules(PE分位分档) + floors(3.1保底) → modifiers(第二层溢价修正) → hardZero(5.4强制归零)
+    // warnings = 第三层趋势风控 + 第四层溢价静态阈值（取最大档提示；15~20pp递进规则依赖历史记忆未实现）
+  },
+  '513100': {
+    name: '纳指ETF',
+    levels: {
+      zero: { label: '0X停买', mult: 0, cls: 'lv-orange' },
+      half: { label: '0.5X', mult: 0.5, cls: 'lv-yellow' },
+      base: { label: '1X', mult: 1, cls: 'lv-neutral' },
+      boost: { label: '1.5X', mult: 1.5, cls: 'lv-lgreen' },
+      max: { label: '2X', mult: 2, cls: 'lv-green' },
+      incomplete: { label: '数据不全', mult: null, cls: 'lv-gray' }
+    },
+    indicators: [
+      { key: 'peTtm', label: '纳指100 PE-TTM', unit: '', digits: 2, staleDays: 7, approx: true },
+      { key: 'pePct', label: 'PE历史百分位（近10年近似）', unit: '%', digits: 2, staleDays: 7, approx: true },
+      { key: 'ndxClose', label: 'NDX收盘点位', unit: '', digits: 2, staleDays: 4 },
+      { key: 'ema200', label: 'NDX EMA200（自算）', unit: '', digits: 2, staleDays: 4 },
+      { key: 'prem', label: '513100溢价率（净值还原）', unit: '%', digits: 2, staleDays: 7, approx: true },
+      { key: 'us10y', label: '美债10Y收益率(FRED)', unit: '%', digits: 2, staleDays: 14, optional: true }
+    ],
+    derived: [
+      {
+        key: 'emaGap', label: '收盘相对EMA200偏离', unit: '%', digits: 2,
+        needs: ['ndxClose', 'ema200'], formula: v => round2((v.ndxClose / v.ema200 - 1) * 100)
+      },
+      {
+        key: 'erpNd', label: 'ERP宏观监测(1/PE−美债10Y)', unit: '%', digits: 2, optional: true,
+        needs: ['peTtm', 'us10y'], formula: v => round2(100 / v.peTtm - v.us10y)
+      }
+    ],
+    rules: [
+      { level: 'zero', reason: 'PE百分位≥85%（高估区，停止买入）',
+        when: { all: [op('ge', 'pePct', 85)] } },
+      { level: 'half', reason: 'PE百分位∈[70%,85%)（偏高估，半倍投入）',
+        when: { all: [op('between', 'pePct', [70, 85])] } },
+      { level: 'base', reason: 'PE百分位∈[45%,70%)（正常定投）',
+        when: { all: [op('between', 'pePct', [45, 70])] } },
+      { level: 'boost', reason: 'PE百分位∈[25%,45%)（偏低估，1.5倍投入）',
+        when: { all: [op('between', 'pePct', [25, 45])] } },
+      { level: 'max', reason: 'PE百分位<25%（低估区，双倍投入）',
+        when: { all: [op('lt', 'pePct', 25)] } }
+    ],
+    defaultLevel: 'zero',
+    defaultReason: 'PE百分位缺失或异常，按手册保守处理为停止买入',
+    floors: [
+      { minLevel: 'base', reason: '手册3.1试运行条款：PE-TTM≤28时定投倍数不低于1X（参数28待回测校准）',
+        when: { all: [op('le', 'peTtm', 28)] } }
+    ],
+    modifiers: [
+      { mult: 0, reason: '买入日溢价>12%触发第二层修正，暂停买入（按最新值判定）',
+        when: { all: [op('gt', 'prem', 12)] } }
+    ],
+    hardZero: [
+      { reason: '极端风险：PE百分位≥95%，当月定投强制归零（手册5.4）',
+        when: { all: [op('ge', 'pePct', 95)] } }
+    ],
+    warnings: [
+      { pct: 50, reason: 'PE百分位≥95% 且 NDX跌破EMA200（双条件共振·减仓50%）',
+        when: { all: [op('ge', 'pePct', 95), op('lt', 'emaGap', 0)] } },
+      { pct: 30, reason: 'PE百分位≥95%（估值极端·月末确认口径，减仓30%）',
+        when: { all: [op('ge', 'pePct', 95)] } },
+      { pct: 20, reason: 'PE百分位≥85% 且 NDX跌破EMA200（趋势风控·减仓20%）',
+        when: { all: [op('ge', 'pePct', 85), op('lt', 'emaGap', 0)] } },
+      { pct: 20, reason: '极端溢价≥25%（强制减仓20%）',
+        when: { all: [op('ge', 'prem', 25)] } },
+      { pct: 10, reason: '高溢价≥20%（首次触发即减仓10%；递进规则未实现，按当前值判定）',
+        when: { all: [op('ge', 'prem', 20)] } },
+      { pct: 0, reason: '溢价率≥15%，进入极端溢价观察区间',
+        when: { all: [op('ge', 'prem', 15)] } }
+    ],
+    srcNotes: [
+      'PE-TTM及PE百分位：蛋卷基金NDX条目（其自算近似口径，历史窗口约自2016年起≈近10年，非Wind精确口径）',
+      'NDX收盘与EMA200：东方财富日线接口拉取后于服务端按标准EMA公式计算',
+      '513100溢价率：净值还原近似法——最新披露单位净值经NDX涨幅修正后与场内价比较（QDII净值滞后T+2，残余误差≈汇率日内波动；非交易所IOPV实时口径）',
+      '美债10Y：FRED DGS10日频数据；ERP宏观监测=1/PE−美债10Y，仅监测展示不参与决策树'
     ]
   }
 };
@@ -2072,14 +2155,15 @@ function evaluateMonitor(code) {
   const v = {}, missing = [];
   cfg.indicators.forEach(ind => {
     const x = snap && snap.values ? snap.values[ind.key] : undefined;
-    if (Number.isFinite(x)) v[ind.key] = x; else missing.push(ind.label);
+    if (Number.isFinite(x)) v[ind.key] = x;
+    else if (!ind.optional) missing.push(ind.label);   // optional指标缺失仅显示"—"，不阻塞判定
   });
   (cfg.derived || []).forEach(d => {
     if (d.needs.every(k => Number.isFinite(v[k]))) v[d.key] = d.formula(v);
-    else missing.push(d.label);
+    else if (!d.optional) missing.push(d.label);
   });
   if (missing.length) {
-    return { level: 'incomplete', mult: null, missing,
+    return { level: 'incomplete', mult: null, finalMult: null, warnings: [], missing,
       reasons: ['缺少指标：' + missing.join('、') + '，数据不全无法判定'] };
   }
   const reasons = [];
@@ -2088,14 +2172,45 @@ function evaluateMonitor(code) {
     if (evalNode(r.when, v)) { lvl = r.level; hitReason = r.reason; break; }
   }
   if (!lvl) { lvl = cfg.defaultLevel; hitReason = cfg.defaultReason; }
-  for (const vt of (cfg.veto || [])) {
-    if (vt.caps.includes(lvl) && evalNode(vt.when, v)) {
+  for (const vt of (cfg.veto || [])) {          // 否决降档（只能降，510880）
+    if ((vt.caps || []).includes(lvl) && evalNode(vt.when, v)) {
       reasons.push('⚠ 否决：' + vt.reason);
       lvl = vt.capTo;
     }
   }
+  for (const fl of (cfg.floors || [])) {        // 保底升档（只能升，513100手册3.1）
+    const needLv = cfg.levels[fl.minLevel];
+    if (needLv && evalNode(fl.when, v) && cfg.levels[lvl].mult < needLv.mult) {
+      reasons.push('⬆ 保底：' + fl.reason);
+      lvl = fl.minLevel;
+    }
+  }
+  let mod = 1;                                  // 乘法修正（第二层溢价修正）
+  for (const md of (cfg.modifiers || [])) {
+    if (evalNode(md.when, v)) {
+      mod *= md.mult;
+      reasons.push((md.mult === 0 ? '⛔ ' : '× ') + md.reason);
+    }
+  }
+  const baseMult = cfg.levels[lvl].mult;
+  let finalMult = +(baseMult * mod).toFixed(2);
+  for (const hz of (cfg.hardZero || [])) {      // 强制归零覆盖一切（5.4极端风险）
+    if (evalNode(hz.when, v)) {
+      finalMult = 0;
+      reasons.unshift('⛔ ' + hz.reason);
+      break;
+    }
+  }
+  const warnings = [];                          // 减仓警示：取最大pct + 观察提示
+  let top = null;
+  for (const w of (cfg.warnings || [])) {
+    if (!evalNode(w.when, v)) continue;
+    if ((w.pct || 0) > 0) { if (!top || w.pct > top.pct) top = w; }
+    else warnings.push({ pct: 0, reason: w.reason });
+  }
+  if (top) warnings.unshift(top);
   reasons.unshift(hitReason);
-  return { level: lvl, mult: cfg.levels[lvl].mult, missing: [], reasons };
+  return { level: lvl, mult: baseMult, finalMult, warnings, missing: [], reasons };
 }
 
 function parseMonDate(s) {
@@ -2135,10 +2250,29 @@ function monCardHtml(code) {
       '<span class="mult-note">点击右上角 [刷新] 拉取监测数据</span></div>';
   } else {
     const ev = evaluateMonitor(code);
-    const lv = cfg.levels[ev.level] || cfg.levels.incomplete;
+    let lv, badgeLabel, noteTxt;
+    if (ev.level === 'incomplete') {
+      lv = cfg.levels.incomplete;
+      badgeLabel = lv.label; noteTxt = '—';
+    } else if (ev.finalMult > 0) {
+      lv = cfg.levels[ev.level] || cfg.levels.incomplete;
+      badgeLabel = ev.finalMult === lv.mult ? lv.label : ('×' + ev.finalMult + ' ' + lv.label);
+      noteTxt = '本月定投 ' + ev.finalMult + ' 倍金额';
+    } else {
+      // finalMult=0：档位本身为0（510880止盈/暂停）用自带label；高档被修正归零显示统一停买徽章
+      const zlv = Object.values(cfg.levels).find(l => l.mult === 0 && l !== cfg.levels.incomplete);
+      badgeLabel = cfg.levels[ev.level].mult === 0 ? cfg.levels[ev.level].label : (zlv ? zlv.label : '0X停买');
+      lv = { cls: cfg.levels[ev.level].mult === 0 ? cfg.levels[ev.level].cls : (zlv ? zlv.cls : 'lv-orange') };
+      noteTxt = '本月定投暂停';
+    }
     body = '<div class="mon-verdict">' +
-      '<span class="lv-badge ' + lv.cls + '">' + esc(lv.label) + '</span>' +
-      '<span class="mult-note">' + (ev.mult === null ? '—' : '本月定投 ' + ev.mult + ' 倍金额') + '</span></div>';
+      '<span class="lv-badge ' + lv.cls + '">' + esc(badgeLabel) + '</span>' +
+      '<span class="mult-note">' + esc(noteTxt) + '</span></div>';
+    if (ev.warnings && ev.warnings.length) {
+      body += '<div class="mon-warn">' +
+        ev.warnings.map(w => (w.pct > 0 ? '⚠ 建议减仓 ' + w.pct + '%：' : '👁 观察：') + esc(w.reason)).join('<br>') +
+        '</div>';
+    }
     const rows = cfg.indicators.map(i => monRowHtml(cfg, i, snap)).join('');
     const dRows = (cfg.derived || []).map(d => {
       const x = evaluateMonitorDerivedVal(d, code);
