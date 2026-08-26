@@ -23,6 +23,11 @@
   --lv-orange:#f57c00;  /* 0X暂停 */
   --lv-red:#c62828;     /* 0X止盈 */
   --lv-yellow:#f9a825;  /* 0.5X */
+  /* 视觉精修（v0.12.0）：第三档淡灰 + 状态数值染色 */
+  --faint:#9aa3ae;
+  --c-good:#1d6b2a;
+  --c-warn:#8a5a00;
+  --c-bad:#b3261e;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{
@@ -272,7 +277,7 @@ body{
 .mon-table .asof{color:var(--muted);font-size:11px;text-align:right}
 .stale{opacity:.45}
 .mon-reason{margin-top:9px;padding-top:8px;border-top:1px solid var(--line);
-  font-size:12px;color:var(--muted);line-height:1.7}
+  font-size:11.5px;color:var(--muted);line-height:1.7}
 .mon-warn{background:rgba(245,124,0,.08);border:1px solid rgba(245,124,0,.35);
   color:#b45309;border-radius:8px;padding:8px 12px;font-size:12px;line-height:1.7;margin-top:10px}
 .src-note{font-size:11px;color:#a0a6b0;margin:6px 2px 0;line-height:1.7}
@@ -280,33 +285,74 @@ body{
 
 /* ===== 定投参考·指标卡组（v0.11.0 四色状态框系统）===== */
 .ind-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:10px}
-.ind-sep{grid-column:1/-1;font-size:11.5px;color:#a0a6b0;margin-top:12px;
+.ind-sep{grid-column:1/-1;font-size:11.5px;color:var(--muted);margin-top:12px;
   padding-top:9px;border-top:1px dashed var(--line)}
+.mk-wrap{position:relative;grid-column:1/-1}
 .ind-card{border:1px solid var(--line);border-radius:9px;background:var(--card);
   padding:9px 11px;display:flex;flex-direction:column;gap:3px;min-width:0}
 .ind-card.st-good{border-color:rgba(46,125,50,.55);background:rgba(46,125,50,.06)}
-.ind-card.st-warn{border-color:rgba(249,168,37,.6);background:rgba(249,168,37,.07)}
-.ind-card.st-bad{border-color:rgba(198,40,40,.5);background:rgba(198,40,40,.055)}
-.ind-title{font-size:12px;color:var(--muted);line-height:1.35}
+.ind-card.st-warn{border-color:rgba(249,168,37,.65);background:rgba(249,168,37,.07)}
+.ind-card.st-bad{border-color:rgba(198,40,40,.55);background:rgba(198,40,40,.055)}
+.ind-head{display:flex;align-items:flex-start;gap:6px}
+.ind-title{font-size:13px;color:var(--muted);line-height:1.35}
 .ind-title small{display:block;font-size:10.5px;opacity:.8;font-weight:400}
-.ind-val{font-size:22px;font-weight:700;line-height:1.25;white-space:nowrap}
+.ind-badge{font-size:11px;font-weight:600;line-height:1;padding:3px 9px;border-radius:999px;
+  margin-left:auto;flex:none;white-space:nowrap}
+.ind-badge.b-normal{background:#eceff3;color:#5f6673}
+.ind-badge.b-good{background:rgba(46,125,50,.12);color:var(--c-good)}
+.ind-badge.b-warn{background:rgba(249,168,37,.16);color:var(--c-warn)}
+.ind-badge.b-bad{background:rgba(198,40,40,.10);color:var(--c-bad)}
+.ind-val{font-size:18px;font-weight:700;line-height:1.25;white-space:nowrap}
+.ind-val.c-good{color:var(--c-good)}
+.ind-val.c-warn{color:var(--c-warn)}
+.ind-val.c-bad{color:var(--c-bad)}
 .ind-val i{font-style:normal;font-size:13px;color:var(--muted);margin-left:2px;font-weight:600}
 .ind-val em{font-style:normal;font-size:12px;color:var(--muted);font-weight:600;margin-left:5px}
-.ind-tip{font-size:11px;line-height:1.45;min-height:16px;color:var(--muted)}
-.st-good .ind-tip{color:#2e7d32}
-.st-warn .ind-tip{color:#b45309}
-.st-bad .ind-tip{color:#c62828}
+.ind-tip{font-size:11.5px;line-height:1.45;min-height:16px;color:var(--muted)}
+.st-good .ind-tip{color:var(--c-good)}
+.st-warn .ind-tip{color:var(--c-warn)}
+.st-bad .ind-tip{color:var(--c-bad)}
+/* 阈值型细刻度线（v0.12.0）：无文字标注，区间带+阈值刻度+游标 */
+.tickbar{position:relative;height:8px;border-radius:4px;background:rgba(127,127,127,.14);margin:6px 0 2px}
+.tb-band{position:absolute;top:0;height:100%;background:rgba(127,127,127,.22);border-radius:4px}
+.tb-hot{position:absolute;top:0;height:100%;right:0;background:rgba(198,40,40,.15);border-radius:0 4px 4px 0}
+.tb-mark{position:absolute;top:-1px;width:2px;height:10px;background:rgba(127,127,127,.45);border-radius:1px}
+.tb-cur{position:absolute;top:50%;width:8px;height:8px;border-radius:50%;background:#2563eb;
+  border:1.5px solid #fff;transform:translate(-50%,-50%);box-shadow:0 0 0 1px rgba(37,99,235,.3)}
 .pctbar{position:relative;height:8px;border-radius:4px;background:rgba(127,127,127,.16);margin:5px 0 1px}
 .pb-band{position:absolute;top:0;height:100%;background:rgba(127,127,127,.24);border-radius:4px}
 .pb-hot{position:absolute;top:0;height:100%;right:0;background:rgba(198,40,40,.15);border-radius:0 4px 4px 0}
 .pb-mark{position:absolute;top:-2px;width:1px;height:12px;background:rgba(127,127,127,.45)}
 .pb-cur{position:absolute;top:50%;width:9px;height:9px;border-radius:50%;background:#2563eb;
   border:1.5px solid #fff;transform:translate(-50%,-50%);box-shadow:0 0 0 1px rgba(37,99,235,.35)}
-.pb-scale{position:relative;height:12px;font-size:9px;color:#a0a6b0}
+.pb-scale{position:relative;height:12px;font-size:9px;color:var(--faint)}
 .pb-scale span{position:absolute;transform:translateX(-50%)}
 .ind-ref{font-size:11px;color:var(--muted);line-height:1.55}
 .ind-ref b{font-weight:600;color:inherit;opacity:.75}
-.ind-sub{font-size:10.5px;color:#a0a6b0;margin-top:auto;padding-top:2px}
+.ind-sub{font-size:10.5px;color:var(--faint);margin-top:auto;padding-top:2px}
+/* 市场参考行卡 + ⓘ 气泡（v0.12.0） */
+.mk-rows{background:var(--card);border:1px solid var(--line);border-radius:9px;margin-top:8px;overflow:hidden}
+.mk-row{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--card2)}
+.mk-row:last-child{border-bottom:none}
+.mk-name{font-size:13px;color:var(--muted);line-height:1.3}
+.mk-name small{display:block;font-size:10px;color:var(--faint);font-weight:400}
+.mk-val{font-size:15px;font-weight:700;margin-left:auto;font-style:normal}
+.mk-val.c-good{color:var(--c-good)}
+.mk-val.c-warn{color:var(--c-warn)}
+.mk-val.c-bad{color:var(--c-bad)}
+.mk-row .ind-badge{margin-left:2px}
+.info-dot{width:16px;height:16px;border-radius:50%;border:1px solid var(--line);background:var(--card);
+  color:var(--muted);font-size:10px;font-weight:700;line-height:1;cursor:pointer;margin:0 6px;
+  padding:0;font-family:Georgia,serif;font-style:italic;vertical-align:middle}
+.info-dot:hover{border-color:var(--accent);color:var(--accent)}
+.mk-bubble{position:absolute;top:26px;right:4px;z-index:30;width:min(320px,92vw);
+  background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+  box-shadow:0 6px 20px rgba(16,24,40,.14);font-size:11.5px;color:var(--text);line-height:1.65}
+.mkb-title{font-weight:700;margin-bottom:6px;font-size:12px}
+.mkb-item{padding:6px 0;border-top:1px dashed var(--card2)}
+.mkb-item:first-of-type{border-top:none;padding-top:0}
+.mkb-item b{font-size:12px}
+.mkb-item .mkb-trig{color:var(--muted)}
 
 /* ===== 手机端适配（v0.8.0）：≤768px 启用，桌面样式零改动 ===== */
 @media (max-width:768px){
@@ -365,8 +411,9 @@ body{
   .mon-verdict{flex-wrap:nowrap;gap:10px}
   .mult-note{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .mon-warn{padding:7px 10px;font-size:11.5px}
-  .ind-val{font-size:19px}
+  .ind-val{font-size:17px}
   .ind-card{padding:8px 9px}
+  .mk-bubble{right:-4px;width:min(300px,94vw)}
   .ind-grid{grid-template-columns:repeat(2,1fr)}
 }
 </style>
@@ -2069,8 +2116,8 @@ const MONITOR_CONFIGS = {
     indicators: [
       { key: 'divYield', label: '股息率', sub: '上证红利指数', unit: '%', digits: 2, staleDays: 14,
         zones: [
-          { max: 3.5, st: 'bad', tip: '止盈观察线3.5%下方' },
-          { min: 3.5, max: 4.0, st: 'bad', tip: '低于4%否决线·高倍数强制降档' },
+          { max: 3.5, st: 'bad', tip: '止盈观察线3.5%下方', label: '止盈观察' },
+          { min: 3.5, max: 4.0, st: 'bad', tip: '低于4%否决线·高倍数强制降档', label: '否决降档' },
           { min: 4.0, max: 4.3, st: 'warn', tip: '接近4%否决线' }
         ] },
       { key: 'cb10y', label: '10年期国债收益率', unit: '%', digits: 2, staleDays: 10, noCard: true },
@@ -2150,7 +2197,7 @@ const MONITOR_CONFIGS = {
       { key: 'ndxClose', label: 'NDX收盘点位', unit: '', digits: 2, staleDays: 4, noCard: true },
       { key: 'ema200', label: 'NDX EMA200（自算）', unit: '', digits: 2, staleDays: 4, noCard: true },
       { key: 'prem', label: '溢价率', sub: '净值还原近似口径', unit: '%', digits: 2, staleDays: 7,
-        bar: { min: 0, max: 20, marks: [10, 12], hotFrom: 12 },
+        bar: { min: 0, max: 20, marks: [10, 12], hotFrom: 12, slim: true },
         zones: [
           { min: 12, st: 'bad', tip: '超12%停买生效中' },
           { min: 10, max: 12, st: 'warn', tip: '接近12%停买线' }
@@ -2177,7 +2224,6 @@ const MONITOR_CONFIGS = {
     // 市场参考三卡（optional，不参与决策；仅因 513100 为美股标的而挂于此）
     marketIndicators: [
       { key: 'vix', label: 'VIX波动率', sub: 'Cboe 恐慌指数', unit: '', digits: 2, staleDays: 4,
-        bar: { min: 0, max: 40, marks: [15, 20, 30] },
         zones: [
           { max: 15, st: 'bad', tip: '过度乐观·警惕(逆向减仓信号)' },
           { min: 15, max: 20, st: 'warn', tip: '接近过热线15' },
@@ -2187,14 +2233,12 @@ const MONITOR_CONFIGS = {
         ] },
       { key: 'fng', label: '恐惧贪婪指数', sub: 'CNN (0~100)', unit: '', digits: 0, staleDays: 3,
         tail: v => v < 25 ? '极度恐惧' : v < 45 ? '恐惧' : v <= 55 ? '中性' : v < 75 ? '贪婪' : '极度贪婪',
-        bar: { min: 0, max: 100, marks: [25, 75] },
         zones: [
           { max: 25, st: 'good', tip: '极度恐惧·逆向关注区' },
           { min: 70, max: 75, st: 'warn', tip: '趋热' },
           { min: 75, st: 'bad', tip: '极度贪婪·过热' }
         ] },
       { key: 'rsi14', label: 'NDX RSI14', sub: '平台自算·Wilder', unit: '', digits: 2, staleDays: 4,
-        bar: { min: 0, max: 100, marks: [30, 70] },
         zones: [
           { max: 30, st: 'good', tip: '超卖' },
           { min: 70, st: 'bad', tip: '超买' }
@@ -2332,16 +2376,31 @@ function parseMonDate(s) {
   return NaN;
 }
 function matchZone(zones, val) {
-  if (!Array.isArray(zones)) return { st: 'normal', tip: '' };
+  if (!Array.isArray(zones)) return { st: 'normal', tip: '', label: '' };
   for (const z of zones) {
     if ((z.min == null || val >= z.min) && (z.max == null || val < z.max)) {
-      return { st: z.st || 'normal', tip: z.tip || '' };
+      return { st: z.st || 'normal', tip: z.tip || '', label: z.label || '' };
     }
   }
-  return { st: 'normal', tip: '' };
+  return { st: 'normal', tip: '', label: '' };
+}
+const BADGE_ST = { normal: '常规', warn: '接近临界', bad: '警示', good: '有利' };
+function tickHtml(val, bar) {
+  if (!bar) return '';
+  if (!Number.isFinite(val)) return '<div class="tickbar"></div>';
+  const span = bar.max - bar.min;
+  const pos = x => Math.max(0, Math.min(100, (x - bar.min) / span * 100));
+  let h = '<div class="tickbar">';
+  if (bar.band) h += '<i class="tb-band" style="left:' + ((bar.band[0] - bar.min) / span * 100).toFixed(2) +
+    '%;width:' + ((bar.band[1] - bar.band[0]) / span * 100).toFixed(2) + '%"></i>';
+  if (bar.hotFrom != null) h += '<i class="tb-hot" style="left:' + ((bar.hotFrom - bar.min) / span * 100).toFixed(2) + '%"></i>';
+  (bar.marks || []).forEach(m => { h += '<i class="tb-mark" style="left:' + ((m - bar.min) / span * 100).toFixed(2) + '%"></i>'; });
+  h += '<i class="tb-cur" style="left:' + pos(val).toFixed(2) + '%"></i></div>';
+  return h;
 }
 function pctBarHtml(val, bar, digits) {
   if (!bar) return '';
+  if (bar.slim) return tickHtml(val, bar);
   const span = bar.max - bar.min;
   const pos = Math.max(0, Math.min(100, (val - bar.min) / span * 100));
   let h = '<div class="pctbar">';
@@ -2369,18 +2428,22 @@ function indCardHtml(o, val, dateStr, opts) {
   const snap = opts.snap || { values: {}, dates: {} };
   const has = Number.isFinite(val);
   const stale = has && opts.snap && monIsStale(snap, o);
-  let cls = 'ind-card ', tip = '', extraCls = '';
+  let cls = 'ind-card ', tip = '', extraCls = '', badge = '', vCls = '';
   if (has) {
     const z = matchZone(o.zones, val);
     cls += 'st-' + z.st;
     tip = z.tip;
+    badge = '<span class="ind-badge b-' + z.st + '">' +
+      esc(z.label || (o.tail ? o.tail(val) : '') || BADGE_ST[z.st]) + '</span>';
+    if (z.st !== 'normal') vCls = ' c-' + z.st;
   } else { cls += 'st-normal'; }
-  if (stale) extraCls = ' <span class="stale">·数据超期</span>';
+  if (stale) extraCls = ' <span class="stale">数据陈旧</span>';
   let h = '<div class="' + cls + '" data-ind="' + esc(o.key) + '">';
-  h += '<div class="ind-title">' + esc(o.label) + (o.sub ? '<small>' + esc(o.sub) + '</small>' : '') + '</div>';
+  h += '<div class="ind-head"><div class="ind-title">' + esc(o.label) +
+    (o.sub ? '<small>' + esc(o.sub) + '</small>' : '') + '</div>' + badge + '</div>';
   if (has) {
     const tail = o.tail ? '<em>(' + esc(o.tail(val)) + ')</em>' : '';
-    h += '<div class="ind-val num' + (stale ? ' stale' : '') + '">' +
+    h += '<div class="ind-val num' + vCls + (stale ? ' stale' : '') + '">' +
       val.toFixed(o.digits == null ? 2 : o.digits) + (o.unit ? '<i>' + esc(o.unit) + '</i>' : '') + tail + '</div>';
   } else {
     h += '<div class="ind-val num">—</div>';
@@ -2410,18 +2473,79 @@ function renderIndCards(code) {
       Number.isFinite(x) ? '自动计算' : '', { snap, ev }));
   });
   let html = '<div class="ind-grid">' + cards.join('') + '</div>';
-  const mi = cfg.marketIndicators || [];
-  if (mi.some(o => Number.isFinite(snap.values[o.key]))) {
-    html += '<div class="ind-sep">—— 市场参考（不参与决策，日常感知用）</div><div class="ind-grid">';
-    mi.forEach(o => {
-      html += indCardHtml(o, snap.values[o.key], dOf(o.key), { snap, ev });
-    });
-    html += '</div>';
-  } else if (mi.length) {
-    html += '<div class="ind-sep">—— 市场参考（不参与决策，日常感知用）</div><div class="ind-grid">' +
-      mi.map(o => indCardHtml(o, NaN, '')).join('') + '</div>';
-  }
+  html += marketRowsHtml(cfg, snap, dOf);
   return html;
+}
+function marketRowsHtml(cfg, snap, dOf) {
+  const mi = cfg.marketIndicators || [];
+  if (!mi.length) return '';
+  const rows = mi.map(o => {
+    const v = snap.values[o.key];
+    const has = Number.isFinite(v);
+    let pill = '', vCls = '', staleCls = '';
+    if (has) {
+      const z = matchZone(o.zones, v);
+      const txt = (o.tail ? o.tail(v) : '') || z.label || BADGE_ST[z.st];
+      pill = '<span class="ind-badge b-' + z.st + '">' + esc(txt) + '</span>';
+      if (z.st !== 'normal') vCls = ' c-' + z.st;
+      if (monIsStale(snap, o)) staleCls = ' stale';
+    }
+    return '<div class="mk-row"><span class="mk-name">' + esc(o.label) +
+      (o.sub ? '<small>' + esc(o.sub) + '</small>' : '') + '</span>' +
+      '<span class="mk-val num' + vCls + staleCls + '">' +
+      (has ? v.toFixed(o.digits == null ? 2 : o.digits) : '—') + '</span>' + pill + '</div>';
+  }).join('');
+  const hasAny = mi.some(o => Number.isFinite(snap.values[o.key]));
+  const bubble = hasAny ? '<div class="mk-bubble" hidden></div>' : '';
+  return '<div class="mk-wrap"><div class="ind-sep">—— 市场参考' +
+    '<button class="info-dot" type="button" aria-label="数据说明" title="数据说明">i</button>' +
+    '（不参与决策，日常感知用）</div>' + bubble +
+    '<div class="mk-rows">' + rows + '</div></div>';
+}
+function mkBubbleHtml(cfg, snap) {
+  const mi = cfg.marketIndicators || [];
+  let h = '<div class="mkb-title">数据说明</div>';
+  mi.forEach(o => {
+    const v = snap.values[o.key];
+    const date = (snap.dates && snap.dates[o.key]) || '';
+    let trig = '';
+    (o.zones || []).forEach(z => {
+      if (!z.st || z.st === 'normal') return;
+      const lo = z.min != null ? ('≥' + z.min) : null;
+      const hi = z.max != null ? ('<' + z.max) : null;
+      const rng = lo && hi ? (lo + ' 且 ' + hi) : (lo || hi);
+      trig += '<div class="mkb-trig">· ' + rng + (z.tip ? ('：' + esc(z.tip)) : '') + '</div>';
+    });
+    h += '<div class="mkb-item"><b>' + esc(o.label) + '</b>' +
+      '<div>来源：' + esc(o.sub || '—') + (date ? (' · 数据日期 ' + esc(date)) : '') + '</div>' +
+      '<div>当前：' + (Number.isFinite(v) ? v.toFixed(o.digits == null ? 2 : o.digits) + esc(o.unit || '') : '—') + '</div>' +
+      (trig ? '<div>触发参考：</div>' + trig : '') +
+      (o.staleDays ? '<div class="mkb-trig">时效：超过 ' + o.staleDays + ' 天未更新会标记陈旧</div>' : '') +
+      '</div>';
+  });
+  return h;
+}
+function initMkBubbleDelegation() {
+  if (typeof document === 'undefined' || !document.addEventListener) return;
+  document.addEventListener('click', e => {
+    const btn = e.target && e.target.closest && e.target.closest('.info-dot');
+    if (btn) {
+      const wrap = btn.closest('.mk-wrap');
+      if (!wrap) return;
+      const bubble = wrap.querySelector('.mk-bubble');
+      if (!bubble) return;
+      const cardEl = btn.closest('[data-code]');
+      const cfgKey = cardEl ? cardEl.getAttribute('data-code') : '513100';
+      bubble.innerHTML = mkBubbleHtml(MONITOR_CONFIGS[cfgKey],
+        (state.monitoring || {})[cfgKey] || { values: {}, dates: {} });
+      bubble.hidden = !bubble.hidden;
+      e.stopPropagation();
+      return;
+    }
+    if (!(e.target && e.target.closest && e.target.closest('.mk-bubble'))) {
+      document.querySelectorAll('.mk-bubble').forEach(b => { b.hidden = true; });
+    }
+  });
 }
 function monIsStale(snap, ind) {
   const t = parseMonDate((snap.dates && snap.dates[ind.key]) || snap.fetchedAt);
@@ -2756,6 +2880,8 @@ async function doLogin() {
     el('btnLogin').disabled = false;
   }
 }
+
+initMkBubbleDelegation();
 
 (async function boot() {
   if (!sb) {
