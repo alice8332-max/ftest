@@ -302,6 +302,8 @@ body{
 .ind-badge.b-good{background:rgba(46,125,50,.12);color:var(--c-good)}
 .ind-badge.b-warn{background:rgba(249,168,37,.16);color:var(--c-warn)}
 .ind-badge.b-bad{background:rgba(198,40,40,.10);color:var(--c-bad)}
+.ind-badge.m-manual{margin-left:auto;background:#eef0f3;color:#6b7280;border:1px dashed #cfd4dc}
+.ind-head .ind-badge.m-manual+.ind-badge{margin-left:0}
 .ind-val{font-size:18px;font-weight:700;line-height:1.25;white-space:nowrap}
 .ind-val.c-good{color:var(--c-good)}
 .ind-val.c-warn{color:var(--c-warn)}
@@ -2293,8 +2295,185 @@ const MONITOR_CONFIGS = {
       '恐惧贪婪指数：CNN Fear & Greed（0-100，七因子合成）；<25极度恐惧/≥75极度贪婪为官方分界',
       'RSI14：平台基于NDX100日线按Wilder平滑自算（70超买/30超卖标准线）'
     ]
+  },
+  '159819': {
+    name: '人工智能ETF',
+    manualEntry: true,
+    manualKeys: ['peTtm', 'pePct', 'pb', 'pbPct'],
+    levels: {
+      zero: { label: '0X停买', mult: 0, cls: 'lv-orange' },
+      half: { label: '0.5X', mult: 0.5, cls: 'lv-yellow' },
+      base: { label: '1X', mult: 1, cls: 'lv-neutral' },
+      boost: { label: '1.5X', mult: 1.5, cls: 'lv-lgreen' },
+      max: { label: '2X', mult: 2, cls: 'lv-green' },
+      incomplete: { label: '数据不全', mult: null, cls: 'lv-gray' }
+    },
+    indicators: [
+      { key: 'peTtm', label: 'AI指数 PE-TTM', unit: '', digits: 2, staleDays: 35, optional: true, noCard: true },
+      { key: 'pePct', label: 'PE百分位', sub: '近5年·手动录入', unit: '%', digits: 2, staleDays: 35, manual: true,
+        bar: { min: 0, max: 100, marks: [20, 40, 60, 80], band: [20, 60] },
+        zones: [
+          { max: 20, st: 'good', tip: '<20%·2X区' },
+          { min: 20, max: 40, st: 'good', tip: '20~40%·1.5X区' },
+          { min: 40, max: 60, st: 'normal' },
+          { min: 60, max: 80, st: 'warn', tip: '60~80%·0.5X区' },
+          { min: 80, st: 'bad', tip: '≥80%·停止买入' }
+        ] },
+      { key: 'pb', label: 'AI指数 PB', unit: '', digits: 2, staleDays: 35, optional: true, noCard: true },
+      { key: 'pbPct', label: 'PB百分位', sub: '近5年·手动录入', unit: '%', digits: 2, staleDays: 35, manual: true,
+        bar: { min: 0, max: 100, marks: [90], hotFrom: 90 },
+        zones: [
+          { max: 90, st: 'normal' },
+          { min: 90, st: 'warn', tip: '≥90%·过滤器观察线（仅PE<20%时触发降档）' }
+        ] },
+      { key: 'csiClose', label: 'CSI人工智收盘', unit: '', digits: 2, staleDays: 7, noCard: true },
+      { key: 'ema200', label: 'CSI EMA200（自算）', unit: '', digits: 2, staleDays: 7, noCard: true }
+    ],
+    derived: [
+      {
+        key: 'emaGap', label: 'AI指数趋势', sub: 'vs EMA200偏离', unit: '%', digits: 2,
+        needs: ['csiClose', 'ema200'], formula: v => round2((v.csiClose / v.ema200 - 1) * 100),
+        refLines: ev => [ev.values.csiClose, ev.values.ema200].every(Number.isFinite)
+          ? ['指数 <b>' + ev.values.csiClose.toFixed(2) + '</b>',
+            'EMA200 <b>' + ev.values.ema200.toFixed(2) + '</b>'] : [],
+        bar: { min: -30, max: 30, marks: [0], slim: true },
+        zones: [
+          { max: 0, st: 'warn', tip: '跌破EMA200·趋势下' }
+        ]
+      }
+    ],
+    rules: [
+      { level: 'zero', reason: '极端风险：PE>90%且跌破EMA200（减仓40%，当月定投暂停）',
+        when: { all: [op('gt', 'pePct', 90), op('lt', 'emaGap', 0)] } },
+      { level: 'boost', reason: 'PB异常过滤：PE低估可信度存疑(PB分位>90%)，2X降为1.5X',
+        when: { all: [op('lt', 'pePct', 20), op('gt', 'pbPct', 90), op('ge', 'emaGap', 0)] } },
+      { level: 'base', reason: 'PB异常过滤：叠加弱趋势(跌破EMA200)，1.5X降为1X',
+        when: { all: [op('lt', 'pePct', 20), op('gt', 'pbPct', 90), op('lt', 'emaGap', 0)] } },
+      { level: 'max', reason: 'PE百分位<20%（深度低估区）·趋势上 → 2X',
+        when: { all: [op('lt', 'pePct', 20), op('ge', 'emaGap', 0)] } },
+      { level: 'boost', reason: 'PE百分位<20%·跌破EMA200防接飞刀 → 1.5X',
+        when: { all: [op('lt', 'pePct', 20), op('lt', 'emaGap', 0)] } },
+      { level: 'boost', reason: 'PE百分位∈[20%,40%)·趋势上 → 1.5X',
+        when: { all: [op('between', 'pePct', [20, 40]), op('ge', 'emaGap', 0)] } },
+      { level: 'base', reason: 'PE百分位∈[20%,40%)·趋势下 → 1X',
+        when: { all: [op('between', 'pePct', [20, 40]), op('lt', 'emaGap', 0)] } },
+      { level: 'base', reason: 'PE百分位∈[40%,60%)·趋势上 → 1X',
+        when: { all: [op('between', 'pePct', [40, 60]), op('ge', 'emaGap', 0)] } },
+      { level: 'half', reason: 'PE百分位∈[40%,60%)·趋势下 → 0.5X',
+        when: { all: [op('between', 'pePct', [40, 60]), op('lt', 'emaGap', 0)] } },
+      { level: 'half', reason: 'PE百分位∈[60%,80%)（高估区，半倍投入）',
+        when: { all: [op('between', 'pePct', [60, 80])] } },
+      { level: 'zero', reason: 'PE百分位≥80%（高估区，停止买入）',
+        when: { all: [op('ge', 'pePct', 80)] } }
+    ],
+    defaultLevel: 'base',
+    defaultReason: '估值区间未覆盖（防御性兜底），按常规1X处理',
+    warnings: [
+      { pct: 40, reason: '极端风险：PE>90%且跌破EMA200（手册第五章·减仓40%；次月同条件再确认则累计封顶40%）',
+        when: { all: [op('gt', 'pePct', 90), op('lt', 'emaGap', 0)] } },
+      { pct: 20, reason: '高估值风险：PE>90%（建议减仓20%；次月仍满足同一条件再减20%，累计封顶40%；解除后按手册第五章恢复矩阵执行）',
+        when: { all: [op('gt', 'pePct', 90), op('ge', 'emaGap', 0)] } },
+      { pct: 20, reason: '趋势风险：PE∈(80%,90%]且跌破EMA200（建议减仓20%；连续确认与恢复规则见手册第五章）',
+        when: { all: [op('gt', 'pePct', 80), op('le', 'pePct', 90), op('lt', 'emaGap', 0)] } }
+    ],
+    srcNotes: [
+      '收盘价与EMA200：东方财富日线接口(CSI人工智能指数930713)拉取后于服务端标准EMA公式计算，全自动更新',
+      'PE-TTM/PE百分位/PB/PB百分位：无免费可靠数据源，由用户参照Wind/韭圈儿等口径每月手动录入（卡片右上角✎按钮），带日期戳存于本机浏览器',
+      '估值百分位口径：近5年窗口；未录入时本标的显示「数据不全」，录入后立即参与矩阵判定',
+      'PB异常过滤器：PE百分位<20%且PB百分位>90%时定投档位降一级（规则前置实现）；跨期减仓确认与恢复矩阵为提示级文案，需人工执行记录'
+    ]
   }
 };
+
+/* ---------- 159819 手动估值录入（存本机 localStorage，云端 payload 不含） ---------- */
+const MANUAL_KEY = 'mon_manual_159819';
+
+function readManual159819() {
+  try {
+    const j = JSON.parse(localStorage.getItem(MANUAL_KEY) || 'null');
+    if (!j || typeof j !== 'object' || !j.values) return null;
+    const out = { values: {}, date: '' };
+    ((MONITOR_CONFIGS['159819'] || {}).manualKeys || []).forEach(k => {
+      const x = +j.values[k];
+      if (Number.isFinite(x)) out.values[k] = x;
+    });
+    if (/^\d{4}-\d{2}-\d{2}$/.test(j.date || '')) out.date = j.date;
+    return Object.keys(out.values).length ? out : null;
+  } catch (e) { return null; }
+}
+
+function applyManualEntry(code) {
+  const cfg = MONITOR_CONFIGS[code];
+  if (!cfg || !cfg.manualKeys) return;
+  const m = readManual159819();
+  if (!m) return;
+  const snap = state.monitoring[code] ||
+    (state.monitoring[code] = { values: {}, dates: {}, fetchedAt: '' });
+  cfg.manualKeys.forEach(k => { snap.values[k] = m.values[k]; snap.dates[k] = m.date; });
+}
+
+function saveManual159819(vals, date) {
+  localStorage.setItem(MANUAL_KEY, JSON.stringify({ values: vals, date: date }));
+}
+
+function clearManual159819() {
+  localStorage.removeItem(MANUAL_KEY);
+  const snap = state.monitoring['159819'];
+  if (snap) {
+    ((MONITOR_CONFIGS['159819'] || {}).manualKeys || []).forEach(k => {
+      delete snap.values[k]; delete snap.dates[k];
+    });
+  }
+}
+
+function openManualModal() {
+  const prev = readManual159819();
+  const v = (prev && prev.values) || {};
+  const ov = openModal({
+    title: '录入估值 · 人工智能ETF(159819)',
+    body: '<div class="hint">口径：中证人工智能主题指数(930713)·近5年百分位，参照 Wind/韭圈儿 等数据源填写；带 <b>*</b> 必填。录入后立即参与矩阵判定。</div>' +
+      '<div class="form-grid">' +
+      fieldHTML({ label: 'PE百分位 % *', id: 'mPePct', type: 'number', value: v.pePct == null ? '' : v.pePct, step: '0.01', min: 0 }) +
+      fieldHTML({ label: 'PB百分位 % *', id: 'mPbPct', type: 'number', value: v.pbPct == null ? '' : v.pbPct, step: '0.01', min: 0 }) +
+      fieldHTML({ label: 'PE-TTM（选填）', id: 'mPeTtm', type: 'number', value: v.peTtm == null ? '' : v.peTtm, step: '0.01', min: 0 }) +
+      fieldHTML({ label: 'PB（选填）', id: 'mPb', type: 'number', value: v.pb == null ? '' : v.pb, step: '0.01', min: 0 }) +
+      fieldHTML({ label: '数据日期', id: 'mDate', type: 'date', value: (prev && prev.date) || today() }) +
+      '</div><div class="hint" id="mErr" style="color:var(--c-bad)"></div>',
+    foot: '<button class="btn" data-msave>保存</button>' +
+      (prev ? '<button class="btn ghost" data-mclear>清除本次录入</button>' : '')
+  });
+  ov.querySelector('[data-msave]').onclick = function () {
+    const numOrUndef = s => { const t = String(s).trim(); if (t === '') return undefined; const x = +t; return Number.isFinite(x) ? x : NaN; };
+    const vals = {
+      pePct: numOrUndef(el('mPePct').value),
+      pbPct: numOrUndef(el('mPbPct').value),
+      peTtm: numOrUndef(el('mPeTtm').value),
+      pb: numOrUndef(el('mPb').value)
+    };
+    const date = el('mDate').value;
+    const err = [];
+    ['pePct', 'pbPct'].forEach(k => {
+      if (!Number.isFinite(vals[k]) || vals[k] < 0 || vals[k] > 100) err.push((k === 'pePct' ? 'PE' : 'PB') + '百分位须为0~100的数字');
+    });
+    ['peTtm', 'pb'].forEach(k => { if (Number.isNaN(vals[k])) err.push((k === 'peTtm' ? 'PE-TTM' : 'PB') + '格式不正确'); });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) err.push('请选择数据日期');
+    if (err.length) { el('mErr').textContent = err.join('；'); return; }
+    saveManual159819(vals, date);
+    applyManualEntry('159819');
+    save();
+    ov.close();
+    renderMonitor();
+    toast('估值已录入，判定已更新');
+  };
+  const cbtn = ov.querySelector('[data-mclear]');
+  if (cbtn) cbtn.onclick = function () {
+    clearManual159819();
+    save();
+    ov.close();
+    renderMonitor();
+    toast('已清除手动估值，本标的回到「数据不全」');
+  };
+}
 
 function evaluateMonitor(code) {
   const cfg = MONITOR_CONFIGS[code];
@@ -2439,8 +2618,9 @@ function indCardHtml(o, val, dateStr, opts) {
   } else { cls += 'st-normal'; }
   if (stale) extraCls = ' <span class="stale">数据陈旧</span>';
   let h = '<div class="' + cls + '" data-ind="' + esc(o.key) + '">';
+  const manB = o.manual ? '<span class="ind-badge m-manual">手动</span>' : '';
   h += '<div class="ind-head"><div class="ind-title">' + esc(o.label) +
-    (o.sub ? '<small>' + esc(o.sub) + '</small>' : '') + '</div>' + badge + '</div>';
+    (o.sub ? '<small>' + esc(o.sub) + '</small>' : '') + '</div>' + manB + badge + '</div>';
   if (has) {
     const tail = o.tail ? '<em>(' + esc(o.tail(val)) + ')</em>' : '';
     h += '<div class="ind-val num' + vCls + (stale ? ' stale' : '') + '">' +
@@ -2592,6 +2772,7 @@ function monCardHtml(code) {
     '<div class="mon-head"><span class="mon-title">' + esc(cfg.name) +
     '<span class="muted num">' + esc(code) + '</span></span>' +
     '<div class="grow"></div>' +
+    (cfg.manualEntry ? '<button class="btn ghost" data-act="editManual" data-code="' + esc(code) + '" style="margin-right:6px">✎ 录入</button>' : '') +
     '<button class="btn ghost" data-act="refreshMon" data-code="' + esc(code) + '">⟳ 刷新</button></div>' +
     body + '</div>';
 }
@@ -2611,6 +2792,7 @@ function renderMonitorSrcNote() {
 function renderMonitor() {
   const list = el('monitorList');
   if (!list) return;
+  Object.keys(MONITOR_CONFIGS).forEach(applyManualEntry);
   if (!sb) {
     list.innerHTML = '<div class="mon-empty">云端未连接：登录云同步并部署监测服务后，「定投参考」可用。<br>详见项目目录 supabase-monitor/03_部署指引.md</div>';
     renderMonitorSrcNote();
@@ -2662,6 +2844,7 @@ async function refreshMonitor(code, btn) {
       dates: (r.meta && typeof r.meta === 'object') ? (r.meta.dates || {}) : {},
       fetchedAt: data.fetchedAt || new Date().toISOString()
     };
+    applyManualEntry(code);
     save();
     toast(code + ' 监测数据已更新');
   } catch (e) {
@@ -2696,6 +2879,8 @@ function bindEvents() {
   });
 
   el('monitorList').addEventListener('click', e => {
+    const ed = e.target.closest('[data-act="editManual"]');
+    if (ed) { openManualModal(); return; }
     const btn = e.target.closest('[data-act="refreshMon"]');
     if (!btn) return;
     refreshMonitor(btn.dataset.code, btn);
