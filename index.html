@@ -252,7 +252,8 @@ body{
 .mon-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .mon-title{font-size:15px;font-weight:600}
 .mon-title .muted{font-weight:400;font-size:12px;margin-left:6px}
-.mon-verdict{display:flex;align-items:center;gap:12px;padding:8px 0 10px;flex-wrap:wrap}
+.mon-verdict{display:flex;align-items:center;gap:12px;padding:8px 0 10px;flex-wrap:nowrap}
+.mult-note{font-size:13px;color:var(--muted);font-weight:600;white-space:nowrap}
 .lv-badge{
   display:inline-block;font-size:20px;font-weight:700;color:#fff;
   border-radius:8px;padding:4px 16px;letter-spacing:.5px;
@@ -264,7 +265,6 @@ body{
 .lv-red{background:var(--lv-red)}
 .lv-yellow{background:var(--lv-yellow)}
 .lv-gray{background:#9aa1ac}
-.mult-note{font-size:13px;color:var(--muted);font-weight:600}
 .mon-table{width:100%;border-collapse:collapse;font-size:13px}
 .mon-table td{padding:5px 6px;border-top:1px dashed var(--line)}
 .mon-table td:first-child{color:var(--muted);width:38%}
@@ -277,6 +277,36 @@ body{
   color:#b45309;border-radius:8px;padding:8px 12px;font-size:12px;line-height:1.7;margin-top:10px}
 .src-note{font-size:11px;color:#a0a6b0;margin:6px 2px 0;line-height:1.7}
 .mon-empty{padding:28px;text-align:center;color:var(--muted);font-size:13px}
+
+/* ===== 定投参考·指标卡组（v0.11.0 四色状态框系统）===== */
+.ind-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:10px}
+.ind-sep{grid-column:1/-1;font-size:11.5px;color:#a0a6b0;margin-top:12px;
+  padding-top:9px;border-top:1px dashed var(--line)}
+.ind-card{border:1px solid var(--line);border-radius:9px;background:var(--card);
+  padding:9px 11px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.ind-card.st-good{border-color:rgba(46,125,50,.55);background:rgba(46,125,50,.06)}
+.ind-card.st-warn{border-color:rgba(249,168,37,.6);background:rgba(249,168,37,.07)}
+.ind-card.st-bad{border-color:rgba(198,40,40,.5);background:rgba(198,40,40,.055)}
+.ind-title{font-size:12px;color:var(--muted);line-height:1.35}
+.ind-title small{display:block;font-size:10.5px;opacity:.8;font-weight:400}
+.ind-val{font-size:22px;font-weight:700;line-height:1.25;white-space:nowrap}
+.ind-val i{font-style:normal;font-size:13px;color:var(--muted);margin-left:2px;font-weight:600}
+.ind-val em{font-style:normal;font-size:12px;color:var(--muted);font-weight:600;margin-left:5px}
+.ind-tip{font-size:11px;line-height:1.45;min-height:16px;color:var(--muted)}
+.st-good .ind-tip{color:#2e7d32}
+.st-warn .ind-tip{color:#b45309}
+.st-bad .ind-tip{color:#c62828}
+.pctbar{position:relative;height:8px;border-radius:4px;background:rgba(127,127,127,.16);margin:5px 0 1px}
+.pb-band{position:absolute;top:0;height:100%;background:rgba(127,127,127,.24);border-radius:4px}
+.pb-hot{position:absolute;top:0;height:100%;right:0;background:rgba(198,40,40,.15);border-radius:0 4px 4px 0}
+.pb-mark{position:absolute;top:-2px;width:1px;height:12px;background:rgba(127,127,127,.45)}
+.pb-cur{position:absolute;top:50%;width:9px;height:9px;border-radius:50%;background:#2563eb;
+  border:1.5px solid #fff;transform:translate(-50%,-50%);box-shadow:0 0 0 1px rgba(37,99,235,.35)}
+.pb-scale{position:relative;height:12px;font-size:9px;color:#a0a6b0}
+.pb-scale span{position:absolute;transform:translateX(-50%)}
+.ind-ref{font-size:11px;color:var(--muted);line-height:1.55}
+.ind-ref b{font-weight:600;color:inherit;opacity:.75}
+.ind-sub{font-size:10.5px;color:#a0a6b0;margin-top:auto;padding-top:2px}
 
 /* ===== 手机端适配（v0.8.0）：≤768px 启用，桌面样式零改动 ===== */
 @media (max-width:768px){
@@ -332,9 +362,12 @@ body{
   /* 定投参考 */
   .mon-card{padding:12px 14px}
   .mon-head{margin-bottom:8px}
-  .mon-table td:first-child{width:42%}
-  .mon-table .val{width:auto}
+  .mon-verdict{flex-wrap:nowrap;gap:10px}
+  .mult-note{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .mon-warn{padding:7px 10px;font-size:11.5px}
+  .ind-val{font-size:19px}
+  .ind-card{padding:8px 9px}
+  .ind-grid{grid-template-columns:repeat(2,1fr)}
 }
 </style>
 </head>
@@ -2034,14 +2067,34 @@ const MONITOR_CONFIGS = {
       incomplete: { label: '数据不全', mult: null, cls: 'lv-gray' }
     },
     indicators: [
-      { key: 'divYield', label: '上证红利指数股息率', unit: '%', digits: 2, staleDays: 14 },
-      { key: 'cb10y', label: '10年期国债收益率', unit: '%', digits: 2, staleDays: 10 },
-      { key: 'pbPct', label: 'PB百分位（近似口径）', unit: '%', digits: 2, staleDays: 14, approx: true }
+      { key: 'divYield', label: '股息率', sub: '上证红利指数', unit: '%', digits: 2, staleDays: 14,
+        zones: [
+          { max: 3.5, st: 'bad', tip: '止盈观察线3.5%下方' },
+          { min: 3.5, max: 4.0, st: 'bad', tip: '低于4%否决线·高倍数强制降档' },
+          { min: 4.0, max: 4.3, st: 'warn', tip: '接近4%否决线' }
+        ] },
+      { key: 'cb10y', label: '10年期国债收益率', unit: '%', digits: 2, staleDays: 10, noCard: true },
+      { key: 'pbPct', label: 'PB百分位', sub: '近10年近似口径', unit: '%', digits: 2, staleDays: 14,
+        bar: { min: 0, max: 100, marks: [30, 45, 65, 75], band: [45, 65] },
+        zones: [
+          { max: 30, st: 'good', tip: '深度低估·2X区' },
+          { min: 30, max: 45, st: 'good', tip: '低估·1.5X区' },
+          { min: 45, max: 62, st: 'normal' },
+          { min: 62, max: 65, st: 'warn', tip: '接近常规区上沿65' },
+          { min: 65, max: 75, st: 'bad', tip: '暂停定投区' },
+          { min: 75, st: 'bad', tip: '止盈观察区' }
+        ] }
     ],
     derived: [
       {
-        key: 'erp', label: 'ERP股权风险溢价', unit: '%', digits: 2,
-        needs: ['divYield', 'cb10y'], formula: v => round2(v.divYield - v.cb10y)
+        key: 'erp', label: 'ERP风险溢价', unit: '%', digits: 2,
+        needs: ['divYield', 'cb10y'], formula: v => round2(v.divYield - v.cb10y),
+        refKeys: ['cb10y'], refLabel: '10Y国债',
+        zones: [
+          { max: 2.0, st: 'bad', tip: '低于2.0暂停线' },
+          { min: 2.0, max: 2.15, st: 'warn', tip: '接近2.0暂停线' },
+          { min: 3.0, st: 'good', tip: '≥3.0加投方向' }
+        ]
       }
     ],
     rules: [
@@ -2082,22 +2135,70 @@ const MONITOR_CONFIGS = {
       incomplete: { label: '数据不全', mult: null, cls: 'lv-gray' }
     },
     indicators: [
-      { key: 'peTtm', label: '纳指100 PE-TTM', unit: '', digits: 2, staleDays: 7, approx: true },
-      { key: 'pePct', label: 'PE历史百分位（近10年近似）', unit: '%', digits: 2, staleDays: 7, approx: true },
-      { key: 'ndxClose', label: 'NDX收盘点位', unit: '', digits: 2, staleDays: 4 },
-      { key: 'ema200', label: 'NDX EMA200（自算）', unit: '', digits: 2, staleDays: 4 },
-      { key: 'prem', label: '513100溢价率（净值还原）', unit: '%', digits: 2, staleDays: 7, approx: true },
-      { key: 'us10y', label: '美债10Y收益率(FRED)', unit: '%', digits: 2, staleDays: 14, optional: true }
+      { key: 'peTtm', label: '纳指100 PE-TTM', unit: '', digits: 2, staleDays: 7, approx: true, noCard: true },
+      { key: 'pePct', label: 'PE百分位', sub: '近10年近似口径', unit: '%', digits: 2, staleDays: 7,
+        bar: { min: 0, max: 100, marks: [25, 45, 70, 85, 95], band: [45, 70] },
+        refLines: ev => Number.isFinite(ev.values.peTtm) ? ['PE-TTM <b>' + ev.values.peTtm.toFixed(2) + '</b>（floor线28）'] : [],
+        zones: [
+          { max: 25, st: 'good', tip: '深度低估·2X区' },
+          { min: 25, max: 45, st: 'good', tip: '偏低估·1.5X区' },
+          { min: 45, max: 70, st: 'normal' },
+          { min: 70, max: 85, st: 'warn', tip: '偏高估·半倍投入区' },
+          { min: 85, max: 95, st: 'bad', tip: '停止买入区' },
+          { min: 95, st: 'bad', tip: '极端风险区' }
+        ] },
+      { key: 'ndxClose', label: 'NDX收盘点位', unit: '', digits: 2, staleDays: 4, noCard: true },
+      { key: 'ema200', label: 'NDX EMA200（自算）', unit: '', digits: 2, staleDays: 4, noCard: true },
+      { key: 'prem', label: '溢价率', sub: '净值还原近似口径', unit: '%', digits: 2, staleDays: 7,
+        bar: { min: 0, max: 20, marks: [10, 12], hotFrom: 12 },
+        zones: [
+          { min: 12, st: 'bad', tip: '超12%停买生效中' },
+          { min: 10, max: 12, st: 'warn', tip: '接近12%停买线' }
+        ] },
+      { key: 'us10y', label: '美债10Y收益率(FRED)', unit: '%', digits: 2, staleDays: 14, optional: true, noCard: true }
     ],
     derived: [
       {
-        key: 'emaGap', label: '收盘相对EMA200偏离', unit: '%', digits: 2,
-        needs: ['ndxClose', 'ema200'], formula: v => round2((v.ndxClose / v.ema200 - 1) * 100)
+        key: 'emaGap', label: 'NDX趋势', sub: 'vs EMA200偏离', unit: '%', digits: 2,
+        needs: ['ndxClose', 'ema200'], formula: v => round2((v.ndxClose / v.ema200 - 1) * 100),
+        refLines: ev => [ev.values.ndxClose, ev.values.ema200].every(Number.isFinite)
+          ? ['NDX <b>' + ev.values.ndxClose.toFixed(2) + '</b>',
+            'EMA200 <b>' + ev.values.ema200.toFixed(2) + '</b>'] : [],
+        zones: [
+          { max: -5, st: 'warn', tip: '跌破EMA200超5%' }
+        ]
       },
       {
-        key: 'erpNd', label: 'ERP宏观监测(1/PE−美债10Y)', unit: '%', digits: 2, optional: true,
-        needs: ['peTtm', 'us10y'], formula: v => round2(100 / v.peTtm - v.us10y)
+        key: 'erpNd', label: 'ERP宏观监测', sub: '1/PE−美债10Y', unit: '%', digits: 2, optional: true,
+        needs: ['peTtm', 'us10y'], formula: v => round2(100 / v.peTtm - v.us10y),
+        refKeys: ['us10y'], refLabel: '美债10Y'
       }
+    ],
+    // 市场参考三卡（optional，不参与决策；仅因 513100 为美股标的而挂于此）
+    marketIndicators: [
+      { key: 'vix', label: 'VIX波动率', sub: 'Cboe 恐慌指数', unit: '', digits: 2, staleDays: 4,
+        bar: { min: 0, max: 40, marks: [15, 20, 30] },
+        zones: [
+          { max: 15, st: 'bad', tip: '过度乐观·警惕(逆向减仓信号)' },
+          { min: 15, max: 20, st: 'warn', tip: '接近过热线15' },
+          { min: 20, max: 28, st: 'normal' },
+          { min: 28, max: 30, st: 'warn', tip: '接近恐慌机会区30' },
+          { min: 30, st: 'good', tip: '恐慌区·历史统计较优建仓区(逆向)' }
+        ] },
+      { key: 'fng', label: '恐惧贪婪指数', sub: 'CNN (0~100)', unit: '', digits: 0, staleDays: 3,
+        tail: v => v < 25 ? '极度恐惧' : v < 45 ? '恐惧' : v <= 55 ? '中性' : v < 75 ? '贪婪' : '极度贪婪',
+        bar: { min: 0, max: 100, marks: [25, 75] },
+        zones: [
+          { max: 25, st: 'good', tip: '极度恐惧·逆向关注区' },
+          { min: 70, max: 75, st: 'warn', tip: '趋热' },
+          { min: 75, st: 'bad', tip: '极度贪婪·过热' }
+        ] },
+      { key: 'rsi14', label: 'NDX RSI14', sub: '平台自算·Wilder', unit: '', digits: 2, staleDays: 4,
+        bar: { min: 0, max: 100, marks: [30, 70] },
+        zones: [
+          { max: 30, st: 'good', tip: '超卖' },
+          { min: 70, st: 'bad', tip: '超买' }
+        ] }
     ],
     rules: [
       { level: 'zero', reason: 'PE百分位≥85%（高估区，停止买入）',
@@ -2143,7 +2244,10 @@ const MONITOR_CONFIGS = {
       'PE-TTM及PE百分位：蛋卷基金NDX条目（其自算近似口径，历史窗口约自2016年起≈近10年，非Wind精确口径）',
       'NDX收盘与EMA200：东方财富日线接口拉取后于服务端按标准EMA公式计算',
       '513100溢价率：净值还原近似法——最新披露单位净值经NDX涨幅修正后与场内价比较（QDII净值滞后T+2，残余误差≈汇率日内波动；非交易所IOPV实时口径）',
-      '美债10Y：FRED DGS10日频数据；ERP宏观监测=1/PE−美债10Y，仅监测展示不参与决策树'
+      '美债10Y：FRED DGS10日频数据；ERP宏观监测=1/PE−美债10Y，仅监测展示不参与决策树',
+      'VIX：Cboe波动率指数（Yahoo行情通道），区间语义<20正常/20~30焦虑/≥30恐慌；本平台按逆向语义着色（恐慌=建仓机会绿、过度乐观=警惕红）',
+      '恐惧贪婪指数：CNN Fear & Greed（0-100，七因子合成）；<25极度恐惧/≥75极度贪婪为官方分界',
+      'RSI14：平台基于NDX100日线按Wilder平滑自算（70超买/30超卖标准线）'
     ]
   }
 };
@@ -2227,15 +2331,97 @@ function parseMonDate(s) {
   }
   return NaN;
 }
-function monRowHtml(cfg, ind, snap) {
-  const x = snap && snap.values ? snap.values[ind.key] : undefined;
-  const has = Number.isFinite(x);
-  const rawDate = (snap && snap.dates && snap.dates[ind.key]) ||
-    (snap && snap.fetchedAt ? String(snap.fetchedAt).slice(5, 10) : '');
-  const stale = has && snap && monIsStale(snap, ind);
-  return '<tr><td>' + esc(ind.label) + '</td>' +
-    '<td class="val num' + (stale ? ' stale' : '') + '">' + (has ? x.toFixed(ind.digits) + ind.unit : '—') + '</td>' +
-    '<td class="asof">' + esc(rawDate) + '</td></tr>';
+function matchZone(zones, val) {
+  if (!Array.isArray(zones)) return { st: 'normal', tip: '' };
+  for (const z of zones) {
+    if ((z.min == null || val >= z.min) && (z.max == null || val < z.max)) {
+      return { st: z.st || 'normal', tip: z.tip || '' };
+    }
+  }
+  return { st: 'normal', tip: '' };
+}
+function pctBarHtml(val, bar, digits) {
+  if (!bar) return '';
+  const span = bar.max - bar.min;
+  const pos = Math.max(0, Math.min(100, (val - bar.min) / span * 100));
+  let h = '<div class="pctbar">';
+  if (bar.band) h += '<div class="pb-band" style="left:' + ((bar.band[0] - bar.min) / span * 100).toFixed(2) +
+    '%;width:' + ((bar.band[1] - bar.band[0]) / span * 100).toFixed(2) + '%"></div>';
+  if (bar.hotFrom != null) h += '<div class="pb-hot" style="left:' + ((bar.hotFrom - bar.min) / span * 100).toFixed(2) + '%"></div>';
+  (bar.marks || []).forEach(m => { h += '<div class="pb-mark" style="left:' + ((m - bar.min) / span * 100).toFixed(2) + '%"></div>'; });
+  h += '<div class="pb-cur" style="left:' + pos.toFixed(2) + '%"></div></div>';
+  h += '<div class="pb-scale"><span style="left:0;transform:none">' + bar.min + '</span>';
+  (bar.marks || []).forEach(m => { h += '<span style="left:' + ((m - bar.min) / span * 100).toFixed(2) + '%">' + m + '</span>'; });
+  h += '<span style="right:0;left:auto;transform:none">' + bar.max + '</span></div>';
+  return h;
+}
+function indRefHtml(o, snap) {
+  const lines = [];
+  if (o.refLines) lines.push(...o.refLines({ values: snap.values }));
+  if (o.refKeys) o.refKeys.forEach(k => {
+    const v = snap.values[k];
+    if (Number.isFinite(v)) lines.push('参考: ' + (o.refLabel || k) + ' <b>' + v.toFixed(2) + '%</b>');
+  });
+  return lines.length ? '<div class="ind-ref">' + lines.join('<br>') + '</div>' : '';
+}
+function indCardHtml(o, val, dateStr, opts) {
+  opts = opts || {};
+  const snap = opts.snap || { values: {}, dates: {} };
+  const has = Number.isFinite(val);
+  const stale = has && opts.snap && monIsStale(snap, o);
+  let cls = 'ind-card ', tip = '', extraCls = '';
+  if (has) {
+    const z = matchZone(o.zones, val);
+    cls += 'st-' + z.st;
+    tip = z.tip;
+  } else { cls += 'st-normal'; }
+  if (stale) extraCls = ' <span class="stale">·数据超期</span>';
+  let h = '<div class="' + cls + '" data-ind="' + esc(o.key) + '">';
+  h += '<div class="ind-title">' + esc(o.label) + (o.sub ? '<small>' + esc(o.sub) + '</small>' : '') + '</div>';
+  if (has) {
+    const tail = o.tail ? '<em>(' + esc(o.tail(val)) + ')</em>' : '';
+    h += '<div class="ind-val num' + (stale ? ' stale' : '') + '">' +
+      val.toFixed(o.digits == null ? 2 : o.digits) + (o.unit ? '<i>' + esc(o.unit) + '</i>' : '') + tail + '</div>';
+  } else {
+    h += '<div class="ind-val num">—</div>';
+  }
+  if (tip || stale) h += '<div class="ind-tip">' + esc(tip) + extraCls + '</div>';
+  else h += '<div class="ind-tip"></div>';
+  h += pctBarHtml(has ? val : NaN, o.bar, o.digits);
+  h += indRefHtml(o, snap);
+  h += '<div class="ind-sub">' + esc(dateStr || '') + (o.approx ? ' · 近似口径' : '') + '</div>';
+  return h + '</div>';
+}
+function renderIndCards(code) {
+  const cfg = MONITOR_CONFIGS[code];
+  const snap = (state.monitoring || {})[code];
+  const ev = evaluateMonitor(code);
+  const cards = [];
+  const dOf = k => (snap.dates && snap.dates[k]) ||
+    (snap.fetchedAt ? String(snap.fetchedAt).slice(5, 10) : '');
+  cfg.indicators.forEach(ind => {
+    if (ind.noCard) return;
+    cards.push(indCardHtml(ind, snap.values[ind.key], dOf(ind.key), { snap, ev }));
+  });
+  (cfg.derived || []).forEach(d => {
+    if (d.noCard) return;
+    const x = evaluateMonitorDerivedVal(d, code);
+    cards.push(indCardHtml(Object.assign({}, d, { approx: false }), x,
+      Number.isFinite(x) ? '自动计算' : '', { snap, ev }));
+  });
+  let html = '<div class="ind-grid">' + cards.join('') + '</div>';
+  const mi = cfg.marketIndicators || [];
+  if (mi.some(o => Number.isFinite(snap.values[o.key]))) {
+    html += '<div class="ind-sep">—— 市场参考（不参与决策，日常感知用）</div><div class="ind-grid">';
+    mi.forEach(o => {
+      html += indCardHtml(o, snap.values[o.key], dOf(o.key), { snap, ev });
+    });
+    html += '</div>';
+  } else if (mi.length) {
+    html += '<div class="ind-sep">—— 市场参考（不参与决策，日常感知用）</div><div class="ind-grid">' +
+      mi.map(o => indCardHtml(o, NaN, '')).join('') + '</div>';
+  }
+  return html;
 }
 function monIsStale(snap, ind) {
   const t = parseMonDate((snap.dates && snap.dates[ind.key]) || snap.fetchedAt);
@@ -2273,13 +2459,7 @@ function monCardHtml(code) {
         ev.warnings.map(w => (w.pct > 0 ? '⚠ 建议减仓 ' + w.pct + '%：' : '👁 观察：') + esc(w.reason)).join('<br>') +
         '</div>';
     }
-    const rows = cfg.indicators.map(i => monRowHtml(cfg, i, snap)).join('');
-    const dRows = (cfg.derived || []).map(d => {
-      const x = evaluateMonitorDerivedVal(d, code);
-      return '<tr><td>' + esc(d.label) + '</td><td class="val num">' +
-        (Number.isFinite(x) ? x.toFixed(d.digits) + d.unit : '—') + '</td><td class="asof">自动计算</td></tr>';
-    }).join('');
-    body += '<table class="mon-table">' + rows + dRows + '</table>';
+    body += renderIndCards(code);
     if (ev.reasons.length) {
       body += '<div class="mon-reason">判定依据：' + ev.reasons.map(esc).join('<br>') + '</div>';
     }
