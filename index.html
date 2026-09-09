@@ -540,8 +540,11 @@ const SUPABASE_TABLE = 'investment_data';
 const SUPABASE_URL = 'https://gqjbtbxtkiptjeryqawd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_xAbx5HkUJCMssWBtPWzgCw_9UDQNrc2';
 const MONITOR_SECRET = 'mon_19850915!888888'; // 定投参考：与 Supabase Edge Function 的 MONITOR_SECRET 一致（防滥用共享串，非保密）
-const FEE_RATE = 0.0001;
+const FEE_RATE_ETF = 0.0001;
+const FEE_RATE_STOCK = 0.00013;
 const FEE_MIN = 5;
+const STOCK_STAMP_TAX = 0.0005;
+const STOCK_TRANSFER_FEE = 0.00001;
 
 const SEED = [
   { code: '510880', name: '红利', type: 'etf' },
@@ -591,7 +594,7 @@ function fmtSigned(n) {
   return (v > 0 ? '+' : v < 0 ? '-' : '') + fmtMoney(Math.abs(v));
 }
 function fmtPrice(n, type) {
-  const dec = type === 'fund' ? 4 : 3;
+  const dec = type === 'stock' ? 2 : type === 'fund' ? 4 : 3;
   return (Number(n) || 0).toLocaleString('zh-CN', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 }
 function fmtShares(n, type) {
@@ -612,9 +615,15 @@ function shortDate(d) {
   const parts = String(d).split('-');
   return parts.length === 3 ? parts[1] + '-' + parts[2] : d;
 }
-function calcFee(type, amount) {
+function calcFee(type, isBuy, amount) {
   if (type === 'fund') return 0;
-  return round2(Math.max(FEE_MIN, round2(amount * FEE_RATE)));
+  const rate = type === 'stock' ? FEE_RATE_STOCK : FEE_RATE_ETF;
+  let fee = Math.max(FEE_MIN, round2(amount * rate));
+  if (type === 'stock') {
+    fee += round2(amount * STOCK_TRANSFER_FEE);
+    if (!isBuy) fee += round2(amount * STOCK_STAMP_TAX);
+  }
+  return round2(fee);
 }
 
 function defaultState() {
@@ -1242,12 +1251,12 @@ function fieldHTML(o) {
 
 function checkShares(s) {
   if (!(s > 0)) return '请输入正确的数量';
-  if (!Number.isInteger(s)) return '场内ETF数量须为整数';
+  if (!Number.isInteger(s)) return '场内标的数量须为整数';
   return '';
 }
-function bindFeeCalc(qty, price, fee, getType) {
+function bindFeeCalc(qty, price, fee, getType, getIsBuy) {
   const upd = () => {
-    fee.value = calcFee(getType(), (parseFloat(qty.value) || 0) * (parseFloat(price.value) || 0)).toFixed(2);
+    fee.value = calcFee(getType(), getIsBuy ? getIsBuy() : true, (parseFloat(qty.value) || 0) * (parseFloat(price.value) || 0)).toFixed(2);
   };
   qty.oninput = upd;
   price.oninput = upd;
@@ -1299,7 +1308,7 @@ function openTradeModal(id, mode) {
   });
   const qty = ov.querySelector('#tQty'), price = ov.querySelector('#tPrice'),
         fee = ov.querySelector('#tFee'), note = ov.querySelector('#tNote');
-  bindFeeCalc(qty, price, fee, () => h.type);
+  bindFeeCalc(qty, price, fee, () => h.type, () => isBuy);
   ov.querySelector('[data-x]').onclick = ov.close;
   ov.querySelector('[data-go]').onclick = () => {
     const s = parseFloat(qty.value), p = parseFloat(price.value);
@@ -1308,7 +1317,7 @@ function openTradeModal(id, mode) {
     if (!msg && !isBuy && s > h.shares + 1e-9) msg = '卖出数量不能超过当前持股 ' + fmtShares(h.shares, h.type);
     if (!msg && !(p > 0)) msg = '请输入正确的价格';
     if (msg) { errEl.textContent = msg; return; }
-    const f = calcFee(h.type, round2(s * p));
+    const f = calcFee(h.type, isBuy, round2(s * p));
     const date = ov.querySelector('#tDate').value || today();
     if (isBuy) applyBuy(h, s, p, f, note.value.trim(), date);
     else applySell(h, s, p, f, note.value.trim(), false, date);
@@ -1322,7 +1331,7 @@ function openTradeModal(id, mode) {
 function openNewHoldingModal() {
   const body =
     '<div class="form-grid">' +
-      '<div class="form-item"><label>类型</label><select id="nType"><option value="etf">场内 ETF</option><option value="fund">场外基金</option></select></div>' +
+      '<div class="form-item"><label>类型</label><select id="nType"><option value="etf">场内 ETF</option><option value="stock">A股股票</option><option value="fund">场外基金</option></select></div>' +
       fieldHTML({ label: '代码', id: 'nCode', placeholder: '如 512100' }) +
       fieldHTML({ label: '名称', id: 'nName', placeholder: '如 中证500ETF' }) +
       fieldHTML({ label: '单价', id: 'nPrice', itemId: 'nPriceItem', type: 'number', step: '0.001', min: 0 }) +
@@ -1341,7 +1350,7 @@ function openNewHoldingModal() {
   const typeSel = ov.querySelector('#nType'), qty = ov.querySelector('#nQty'),
         price = ov.querySelector('#nPrice'), fee = ov.querySelector('#nFee');
   const item = sid => ov.querySelector('#' + sid);
-  bindFeeCalc(qty, price, fee, () => typeSel.value);
+  bindFeeCalc(qty, price, fee, () => typeSel.value, () => true);
   typeSel.onchange = () => {
     const fund = typeSel.value === 'fund';
     ['nPriceItem', 'nQtyItem', 'nFeeItem'].forEach(sid => { item(sid).style.display = fund ? 'none' : ''; });
@@ -1384,7 +1393,7 @@ function openNewHoldingModal() {
         lastUpdate: '', cleared: false, order: nextOrder()
       };
       state.holdings.push(h);
-      const f = calcFee(h.type, round2(s * p));
+      const f = calcFee(h.type, true, round2(s * p));
       applyBuy(h, s, p, f, ov.querySelector('#nNote').value.trim(), ov.querySelector('#nDate').value || today());
     }
     save();
@@ -1523,7 +1532,7 @@ function openEditTxModal(txId) {
   });
   const typeSel = ov.querySelector('#xType'), qty = ov.querySelector('#xQty'),
         price = ov.querySelector('#xPrice'), fee = ov.querySelector('#xFee');
-  bindFeeCalc(qty, price, fee, () => h.type);
+  bindFeeCalc(qty, price, fee, () => h.type, () => typeSel.value === 'buy');
   ov.querySelector('[data-x]').onclick = ov.close;
   ov.querySelector('[data-go]').onclick = () => {
     const errEl = ov.querySelector('#xErr');
@@ -1533,7 +1542,7 @@ function openEditTxModal(txId) {
     if (!msg && !(p > 0)) msg = '请输入正确的价格';
     if (msg) { errEl.textContent = msg; return; }
     const amount = round2(s * p);
-    const f = calcFee(h.type, amount);
+    const f = calcFee(h.type, type === 'buy', amount);
     const snap = { shares: h.shares, avgCost: h.avgCost, cleared: h.cleared };
     undoTxOnHolding(h, t);
     applyTxOnHolding(h, { type, shares: s, price: p, amount, fee: f });
@@ -1737,7 +1746,7 @@ function normalizeImport(data) {
       id: nid,
       code: String(h.code || ''),
       name: String(h.name || ''),
-      type: h.type === 'fund' ? 'fund' : 'etf',
+      type: (h.type === 'fund' || h.type === 'stock') ? h.type : 'etf',
       shares: Number(h.shares) || 0,
       avgCost: Number(h.avgCost) || 0,
       currentPrice: Number(h.currentPrice) || 0,
