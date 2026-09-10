@@ -1388,7 +1388,7 @@ function openNewHoldingModal() {
       state.holdings.push(h);
     } else {
       h = {
-        id: uid(), code, name, type: 'etf',
+        id: uid(), code, name, type: 'type',
         shares: 0, avgCost: 0, currentPrice: 0, prevClose: 0, todayOpen: 0,
         lastUpdate: '', cleared: false, order: nextOrder()
       };
