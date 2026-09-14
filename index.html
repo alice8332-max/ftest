@@ -536,15 +536,15 @@ body{
   <section class="macrobar" id="macroBar"></section>
 
   <nav class="tabs">
-    <button class="tab active" data-tab="holdings">当前持仓</button>
-    <button class="tab" data-tab="kline">行情K线</button>
+    <button class="tab active" data-tab="kline">行情K线</button>
+    <button class="tab" data-tab="holdings">当前持仓</button>
     <button class="tab" data-tab="transactions">交易流水</button>
     <button class="tab" data-tab="plan">定投进度</button>
     <button class="tab" data-tab="alloc">资产配置</button>
     <button class="tab" data-tab="monitor">定投参考</button>
   </nav>
 
-  <main id="view-holdings" class="view active" data-view="holdings">
+  <main id="view-holdings" class="view" data-view="holdings">
     <div class="section-head">
       <h2 id="holdingsTitle">当前持仓（0只）</h2>
       <div class="grow"></div>
@@ -554,7 +554,7 @@ body{
     <div id="holdingList"></div>
   </main>
 
-  <main id="view-kline" class="view" data-view="kline">
+  <main id="view-kline" class="view active" data-view="kline">
     <div class="section-head">
       <h2>行情K线</h2>
       <div class="grow"></div>
@@ -3761,6 +3761,7 @@ function localBoot() {
   setQuoteTimer();
   fetchQuotes(true);
   fetchMacro(true);
+  if (el('view-kline').classList.contains('active')) lazyLoadKlines(false);
   showCorruptDialogIfAny();
 }
 async function startCloudSession() {
@@ -3806,6 +3807,7 @@ async function startCloudSession() {
     setQuoteTimer();
     fetchQuotes(true);
     fetchMacro(true);
+    if (el('view-kline').classList.contains('active')) lazyLoadKlines(false);
     showCorruptDialogIfAny();
   } catch (e) {
     sessionReady = true;
@@ -3816,6 +3818,7 @@ async function startCloudSession() {
     setQuoteTimer();
     fetchQuotes(true);
     fetchMacro(true);
+    if (el('view-kline').classList.contains('active')) lazyLoadKlines(false);
     setSyncDot('err', '云端暂不可达，当前使用本地缓存');
     toast('云端暂不可达，当前使用本地缓存');
     showCorruptDialogIfAny();
