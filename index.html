@@ -279,7 +279,7 @@ body{
   width:100%;max-width:360px;background:#fff;border-radius:14px;
   padding:28px 24px;box-shadow:0 8px 30px rgba(16,24,40,.12);
 }
-/* ===== 行情K线（v0.16.0）===== */
+/* ===== 行情K线（v0.17.0）===== */
 .kline-grid{display:flex;flex-wrap:wrap;gap:14px}
 .kline-card{
   flex:1 1 360px;min-width:340px;max-width:560px;
@@ -296,7 +296,9 @@ body{
 .kli-price{font-size:22px;font-weight:700}
 .kli-pct{font-size:14px;font-weight:600}
 .kli-lastbuy{font-size:11.5px;color:var(--faint);margin-left:auto;white-space:nowrap}
-.kli-svg{width:100%;display:block}
+.kli-svg{width:100%;display:block;touch-action:pan-y;cursor:grab;user-select:none;-webkit-user-select:none}
+.kli-svg.drag,.kli-tl.drag{cursor:grabbing}
+.kli-tl{width:100%;display:block;margin-top:3px;touch-action:pan-y;cursor:ew-resize;user-select:none;-webkit-user-select:none}
 .kli-empty{padding:34px 10px;text-align:center;color:var(--muted);font-size:13px}
 .kli-err{margin-top:6px;font-size:11px;color:var(--warn);line-height:1.6}
 .kli-note{margin-top:6px;font-size:11px;color:var(--faint);line-height:1.6}
@@ -458,9 +460,9 @@ body{
   .ind-card{padding:8px 9px}
   .mk-bubble{right:-4px;width:min(300px,94vw)}
   .ind-grid{grid-template-columns:repeat(2,1fr)}
-  /* 行情K线：手机 2 列半屏宽 */
-  .kline-grid{gap:8px}
-  .kline-card{flex:1 1 calc(50% - 8px);min-width:0;padding:9px 9px}
+  /* 行情K线：手机 1 列全宽（v0.17.0） */
+  .kline-grid{gap:10px}
+  .kline-card{flex:1 1 100%;min-width:0;padding:9px 10px}
   .kli-title{font-size:13px}
   .kli-quote{gap:8px;margin-bottom:6px}
   .kli-price{font-size:16px}
@@ -704,7 +706,7 @@ function defaultState() {
     plans: [],
     activePlanId: null,
     monitoring: {},
-    settings: { quoteAutoSec: 0, gridDefs: {} }
+    settings: { quoteAutoSec: 0, gridDefs: {}, klineFrom: {} }
   };
 }
 function migrateFund(data) {
@@ -1706,6 +1708,15 @@ function normalizeSettings(data) {
     vals.sort((a, b) => a - b);
     s.gridDefs[k] = vals;
   });
+  s.klineFrom = (s.klineFrom && typeof s.klineFrom === 'object' && !Array.isArray(s.klineFrom)) ? s.klineFrom : {};
+  const kfT = new Date(today()).getTime();
+  Object.keys(s.klineFrom).forEach(id => {
+    if (!hids.has(id)) { delete s.klineFrom[id]; return; }
+    const d = String(s.klineFrom[id]);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || isNaN(new Date(d).getTime())) { delete s.klineFrom[id]; return; }
+    const age = kfT - new Date(d).getTime();
+    if (!(age >= 0) || age > 32 * 86400000) delete s.klineFrom[id];
+  });
   data.settings = s;
 }
 function secidOf(code) {
@@ -1804,8 +1815,10 @@ function setQuoteTimer() {
   }
 }
 
-/* ========================= 行情K线（v0.16.0）=========================
-   卡片=标的名称 + 现价/距最近买价% + 近一个月日K蜡烛图 + 买卖点标注（B/S）+ 网格线
+/* ========================= 行情K线（v0.17.0）=========================
+   卡片=标的名称 + 现价/距最近买价% + 近一个月日K蜡烛图 + 买卖点标注（B/S）+ 网格线(含±%标签)
+   + 底部时间条（v0.17.0：左端压缩/拖图平移/双击恢复全月；窗口=左侧日期klineFrom，右端=最新，
+   经 settings 云端同步；手机 1 列全宽）
    数据源=东方财富 push2his 日K（JSONP，与实时行情同一套机制）；localStorage 按 code 缓存当天
 */
 const KLINE_HOSTS = ['https://push2his.eastmoney.com', 'https://92.push2his.eastmoney.com'];
@@ -1940,7 +1953,11 @@ function renderKlines() {
     return;
   }
   list.innerHTML = '<div class="kline-grid">' + hs.map(h => klineCardHTML(h)).join('') + '</div>';
-  el('klineSrcNote').textContent = 'K线来源：东方财富公开历史行情（近一个月日K）；B/S 标记为你录入的交易流水，网格线 = 最近一次买入价 × (1±配置%)。';
+  hs.forEach(h => {
+    const card = list.querySelector && list.querySelector('.kline-card[data-id="' + h.id + '"]');
+    if (card) initKlineScrub(card, h);
+  });
+  el('klineSrcNote').textContent = 'K线来源：东方财富公开历史行情（近一个月日K）；B/S 标记为你录入的交易流水，网格线 = 最近一次买入价 × (1±配置%)；时间窗口：拖动可视化下方时间条左端压缩、拖动图表平移，双击时间条恢复全月，窗口跟随云端同步。';
 }
 function klineCardHTML(h) {
   const lastBuy = lastBuyPriceOf(h);
@@ -1948,17 +1965,22 @@ function klineCardHTML(h) {
   const pct = (cp != null && lastBuy != null) ? cp / lastBuy - 1 : null;
   const cfgBtn = '<button class="kli-cfg" data-act="grid" data-id="' + h.id + '" title="配置 4 根网格线的百分比">⚙ 网格</button>';
   let svgBlock = '<div class="kli-empty">加载中…</div>';
-  const view = windowBars(h);
+  let tlBlock = '';
+  const c = klineStore()[h.code];
+  const view = c && Array.isArray(c.bars) && c.bars.length ? windowBars(h) : null;
   if (view) {
     if (view.length < 2) {
       svgBlock = '<div class="kli-empty">K线数据不足</div>';
     } else {
+      const sub = view.slice(klineI0Of(h, view));
       const txs = state.transactions
         .filter(t => t.holdingId === h.id && (t.type === 'buy' || t.type === 'sell'))
-        .filter(t => t.date >= view[0].date && t.date <= view[view.length - 1].date)
+        .filter(t => t.date >= sub[0].date && t.date <= sub[sub.length - 1].date)
         .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
-      svgBlock = '<svg class="kli-svg" viewBox="0 0 520 ' + (mqMobile.matches ? 833 : 330) + '" xmlns="http://www.w3.org/2000/svg">' +
-        klineSVG(h, view, txs, lastBuy, cp) + '</svg>';
+      svgBlock = '<svg class="kli-svg" viewBox="0 0 520 330" xmlns="http://www.w3.org/2000/svg"><title>左右拖动平移时间窗口</title>' +
+        klineSVG(h, sub, txs, lastBuy, cp) + '</svg>';
+      tlBlock = '<svg class="kli-tl" viewBox="0 0 520 46" xmlns="http://www.w3.org/2000/svg"><title>拖动左端压缩时间范围，双击恢复全月</title>' +
+        klineTimelineSVG(h, view) + '</svg>';
     }
   } else if (klineFails[h.code]) {
     svgBlock = '<div class="kli-empty">K线拉取失败</div>';
@@ -1973,15 +1995,14 @@ function klineCardHTML(h) {
       (pct != null ? '<span class="kli-pct num ' + cls(pct) + '">' + fmtPct(pct) + '</span>' : '') +
       '<span class="kli-lastbuy num">上次买价 ' + (lastBuy != null ? fmtPrice(lastBuy, h.type) : '--') + '</span>' +
     '</div>' +
-    svgBlock + failNote + staleNote +
+    svgBlock + tlBlock + failNote + staleNote +
   '</div>';
 }
 function klineSVG(h, view, txs, lastBuy, cp) {
-  const isM = mqMobile.matches;
-  const K = (isM ? 156 : 400) / 520;
+  const K = 400 / 520;
   const PU = n => Math.max(1, Math.round(n / K));
-  const H = isM ? 833 : 330;
-  const padL = PU(46), padR = PU(14), padT = PU(12), padB = (isM ? PU(24) : PU(20));
+  const H = 330;
+  const padL = PU(56), padR = PU(14), padT = PU(12), padB = PU(20);
   const W = 520;
 
   const prices = [];
@@ -2023,12 +2044,12 @@ function klineSVG(h, view, txs, lastBuy, cp) {
       if (price < yMin || price > yMax) return;
       const y = Math.max(padT, Math.min(H - padB, Y(price)));
       svg += '<line x1="' + padL + '" y1="' + y.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y.toFixed(1) + '" stroke="#9aa3ae" stroke-width="' + PU(0.7) + '" stroke-dasharray="' + PU(3) + ',' + PU(2) + '" opacity="0.8"/>';
-      svg += '<text x="' + (padL - PU(3)) + '" y="' + (y + PU(3.4)).toFixed(1) + '" text-anchor="end" font-size="' + PU(9) + '" fill="#6b7280">' + esc(fmtPrice(price, h.type)) + '</text>';
+      svg += '<text x="' + (padL - PU(3)) + '" y="' + (y + PU(3.4)).toFixed(1) + '" text-anchor="end" font-size="' + PU(9) + '" fill="#6b7280">' + esc(fmtPrice(price, h.type)) + ' ' + p + '%</text>';
     });
     if (lastBuy >= yMin && lastBuy <= yMax) {
       const y = Y(lastBuy);
       svg += '<line x1="' + padL + '" y1="' + y.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y.toFixed(1) + '" stroke="#2f6fed" stroke-width="' + PU(1.6) + '" opacity="0.95"/>';
-      svg += '<text x="' + (padL - PU(3)) + '" y="' + (y - PU(3)).toFixed(1) + '" text-anchor="end" font-size="' + PU(9) + '" font-weight="600" fill="#2f6fed">上次买 ' + esc(fmtPrice(lastBuy, h.type)) + '</text>';
+      svg += '<text x="' + (padL - PU(3)) + '" y="' + (y - PU(3)).toFixed(1) + '" text-anchor="end" font-size="' + PU(9) + '" font-weight="600" fill="#2f6fed">前 ' + esc(fmtPrice(lastBuy, h.type)) + '</text>';
     }
   }
 
@@ -2037,7 +2058,7 @@ function klineSVG(h, view, txs, lastBuy, cp) {
     const cy = Y(t.price);
     const isBuy = t.type === 'buy';
     const col = isBuy ? K_BLUE : K_YELLOW;
-    svg += '<circle cx="' + x.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + PU(3.4) + '" fill="#fff" stroke="' + col + '" stroke-width="' + PU(1.2) + '"/>';
+    svg += '<circle cx="' + x.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + PU(2.3) + '" fill="#fff" stroke="' + col + '" stroke-width="' + PU(1) + '"/>';
     svg += '<text x="' + x.toFixed(1) + '" y="' + (cy - PU(5)).toFixed(1) + '" text-anchor="middle" font-size="' + PU(9) + '" font-weight="700" fill="' + col + '">' + (isBuy ? 'B' : 'S') + '</text>';
     svg += '<text x="' + x.toFixed(1) + '" y="' + (cy + PU(9)).toFixed(1) + '" text-anchor="middle" font-size="' + PU(7.5) + '" fill="#6b7280">' + esc(fmtPrice(t.price, h.type)) + '</text>';
     svg += '<text x="' + x.toFixed(1) + '" y="' + (cy + PU(13.5)).toFixed(1) + '" text-anchor="middle" font-size="' + PU(7.5) + '" fill="#6b7280">' + (isBuy ? '+' : '-') + esc(fmtShares(t.shares, h.type)) + '股</text>';
@@ -2075,6 +2096,124 @@ function klineSVG(h, view, txs, lastBuy, cp) {
   svg += '<text x="' + padL + '" y="' + (H - PU(2)) + '" font-size="' + PU(8) + '" fill="#9aa3ae">' + esc(shortDate(view[0].date)) + '</text>';
   svg += '<text x="' + (W - padR) + '" y="' + (H - PU(2)) + '" text-anchor="end" font-size="' + PU(8) + '" fill="#9aa3ae">' + esc(shortDate(view[view.length - 1].date)) + '</text>';
   return svg;
+}
+const KLINE_MIN_BARS = 3;
+const KLINE_TL_H = 46;
+function klineClampI0(i, n) {
+  if (!(n > KLINE_MIN_BARS)) return 0;
+  return Math.max(0, Math.min(i, n - KLINE_MIN_BARS));
+}
+function klineI0Of(h, view) {
+  const from = state.settings.klineFrom && state.settings.klineFrom[h.id];
+  if (!from || !view || view.length < 2) return 0;
+  let i = view.findIndex(b => b.date >= from);
+  if (i < 0) i = 0;
+  return klineClampI0(i, view.length);
+}
+function klineTimelineSVG(h, view) {
+  const n = view.length;
+  if (n < 2) return '';
+  const ymx = Math.max.apply(null, view.map(b => b.high));
+  const ymn = Math.min.apply(null, view.map(b => b.low));
+  const Y = v => (ymx > ymn) ? 4 + (ymx - v) / (ymx - ymn) * (KLINE_TL_H - 10) : KLINE_TL_H / 2;
+  const step = (520 - 56 - 14) / n;
+  const X = i => 56 + step * (i + 0.5);
+  const i0 = klineI0Of(h, view);
+  let s = '';
+  for (let i = 0; i < n; i++) {
+    const b = view[i];
+    const col = b.close >= b.open ? '#f44336' : '#4caf50';
+    const cx = X(i);
+    s += '<line x1="' + cx.toFixed(1) + '" y1="' + Y(b.high).toFixed(1) + '" x2="' + cx.toFixed(1) + '" y2="' + Y(b.low).toFixed(1) + '" stroke="' + col + '" stroke-width="1"/>';
+    s += '<line x1="' + (cx - 2).toFixed(1) + '" y1="' + Y(b.open).toFixed(1) + '" x2="' + (cx + 2).toFixed(1) + '" y2="' + Y(b.open).toFixed(1) + '" stroke="' + col + '" stroke-width="1.4"/>';
+    s += '<line x1="' + (cx - 2).toFixed(1) + '" y1="' + Y(b.close).toFixed(1) + '" x2="' + (cx + 2).toFixed(1) + '" y2="' + Y(b.close).toFixed(1) + '" stroke="' + col + '" stroke-width="1.4"/>';
+  }
+  const x0 = X(i0), x1 = X(n - 1);
+  s += '<rect x="' + x0.toFixed(1) + '" y="1" width="' + (x1 - x0).toFixed(1) + '" height="' + (KLINE_TL_H - 2) + '" fill="#2f6fed" opacity="0.16" rx="2"/>';
+  s += '<line x1="' + x1.toFixed(1) + '" y1="2" x2="' + x1.toFixed(1) + '" y2="' + (KLINE_TL_H - 2) + '" stroke="#2f6fed" stroke-width="2" opacity="0.8"/>';
+  s += '<rect x="' + (x0 - 2.5).toFixed(1) + '" y="2" width="5" height="' + (KLINE_TL_H - 4) + '" rx="2" fill="#2f6fed"/>';
+  return s;
+}
+function initKlineScrub(card, h) {
+  const svgM = card.querySelector('.kli-svg');
+  const svgT = card.querySelector('.kli-tl');
+  const c = klineStore()[h.code];
+  const view = c && Array.isArray(c.bars) && c.bars.length ? windowBars(h) : null;
+  if (!svgM || !svgT || !view || view.length < KLINE_MIN_BARS) return;
+  const W = 520, padL = 56;
+  const step = (W - padL - 14) / view.length;
+  const px2u = (el, cx) => {
+    const r = el.getBoundingClientRect();
+    return r.width ? (cx - r.left) * W / r.width : 0;
+  };
+  const atIdx = u => klineClampI0(Math.round((u - padL) / step - 0.5), view.length);
+  let raf = 0;
+  let grab = null;
+  const redraw = () => {
+    raf = 0;
+    if (!svgM.isConnected || !svgT.isConnected) return;
+    const i0 = klineI0Of(h, view);
+    const sub = view.slice(i0);
+    const txs = state.transactions
+      .filter(t => t.holdingId === h.id && (t.type === 'buy' || t.type === 'sell'))
+      .filter(t => t.date >= sub[0].date && t.date <= sub[sub.length - 1].date)
+      .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+    svgM.innerHTML = klineSVG(h, sub, txs, lastBuyPriceOf(h), h.currentPrice > 0 ? h.currentPrice : null);
+    svgT.innerHTML = klineTimelineSVG(h, view);
+  };
+  const schedule = () => { if (!raf) raf = requestAnimationFrame(redraw); };
+  const setFrom = i0 => {
+    const obj = state.settings.klineFrom = state.settings.klineFrom || {};
+    if (i0 > 0) obj[h.id] = view[i0].date; else delete obj[h.id];
+    schedule();
+  };
+  const onMove = e => {
+    if (!grab) return;
+    e.preventDefault();
+    if (!grab.el.isConnected) { end(); return; }
+    const u = px2u(grab.el, e.clientX);
+    if (grab.mode === 'thumb') setFrom(atIdx(u));
+    else setFrom(klineClampI0(grab.startI0 + Math.round((u - grab.startU) / step), view.length));
+  };
+  const end = () => {
+    if (!grab) return;
+    try { grab.el.releasePointerCapture(grab.pid); } catch (err) {}
+    svgM.classList.remove('drag'); svgT.classList.remove('drag');
+    grab = null;
+    save();
+  };
+  const begin = (el, mode, e) => {
+    const u = px2u(el, e.clientX);
+    const i0 = klineI0Of(h, view);
+    grab = { mode, startU: u, startI0: i0, el, pid: e.pointerId };
+    try { el.setPointerCapture(e.pointerId); } catch (err) {}
+    el.classList.add('drag');
+    e.preventDefault();
+    const u2 = px2u(el, e.clientX);
+    if (mode === 'thumb') setFrom(atIdx(u2));
+    else setFrom(klineClampI0(grab.startI0 + Math.round((u2 - grab.startU) / step), view.length));
+  };
+  const startT = e => {
+    const u = px2u(svgT, e.clientX);
+    const i0 = klineI0Of(h, view);
+    const x0 = padL + step * (i0 + 0.5);
+    begin(svgT, Math.abs(u - x0) < Math.max(10, step / 2) ? 'thumb' : 'win', e);
+  };
+  const startM = e => begin(svgM, 'win', e);
+  svgT.addEventListener('pointerdown', startT);
+  svgM.addEventListener('pointerdown', startM);
+  svgT.addEventListener('pointermove', onMove);
+  svgM.addEventListener('pointermove', onMove);
+  svgT.addEventListener('pointerup', end);
+  svgM.addEventListener('pointerup', end);
+  svgT.addEventListener('pointercancel', end);
+  svgM.addEventListener('pointercancel', end);
+  svgT.addEventListener('dblclick', () => {
+    const obj = state.settings.klineFrom;
+    if (obj) delete obj[h.id];
+    save();
+    redraw();
+  });
 }
 function openGridModal(id) {
   const h = getHolding(id);
