@@ -1970,27 +1970,51 @@ async function jsonpFflow(secid) {
 async function fetchMacro(silent) {
   if (macroBusy) return;
   macroBusy = true;
+  let m = null;
   try {
-    const diff = await jsonpQuote('1.000001,0.399001,100.NDX,112.B00Y,118.AU9999', 'f12,f14,f2,f3,f4,f6');
+    const diff = await jsonpQuote('1.000001,0.399001,100.NDX,112.B00Y,118.AU9999', 'f12,f13,f14,f2,f3,f4,f6');
     const by = {};
-    diff.forEach(q => { by[q.f12] = q; });
-    const m = { at: Date.now(), date: today() };
-    MACRO_IDS.forEach(it => { m[it.key] = pickMacro(by[it.code]); });
-    m.turnoverToday = macroYuan(by['000001'] && by['000001'].f6) + macroYuan(by['399001'] && by['399001'].f6);
-    const amts = await Promise.all([jsonpKlineAmt('1.000001'), jsonpKlineAmt('0.399001')]);
-    m.turnoverYest = (amts[0] && amts[0].yest || 0) + (amts[1] && amts[1].yest || 0);
-    const fl = await Promise.all([jsonpFflow('1.000001'), jsonpFflow('0.399001')]);
-    m.flow = (fl[0] || 0) + (fl[1] || 0);
+    diff.forEach(q => { by[(q.f13 != null ? q.f13 + '.' : '') + q.f12] = q; });
+    const prev = macroStore();
+    m = { at: Date.now(), date: today() };
+    MACRO_IDS.forEach(it => {
+      const itm = pickMacro(by[it.secid]);
+      m[it.key] = itm || (prev && prev[it.key]) || null;
+    });
+    m.turnoverToday = macroYuan(by['1.000001'] && by['1.000001'].f6) + macroYuan(by['0.399001'] && by['0.399001'].f6);
+    if (!(m.turnoverToday > 0) && prev && prev.turnoverToday > 0) m.turnoverToday = prev.turnoverToday;
+    m.turnoverYest = prev && Number.isFinite(prev.turnoverYest) ? prev.turnoverYest : null;
+    m.flow = prev && Number.isFinite(prev.flow) ? prev.flow : null;
     saveMacroStore(m);
     renderMacroBar();
-    if (!silent) toast('宏观行情已更新');
-    return m;
   } catch (e) {
     if (!silent) quoteErrToast(true, '宏观数据拉取失败');
-    return null;
   } finally {
     macroBusy = false;
   }
+  if (m && m.at) {
+    try { await fillMacroSlow(m, silent); } catch (e) {}
+  }
+  return m;
+}
+async function fillMacroSlow(m, silent) {
+  const [amts, fl] = await Promise.all([
+    Promise.allSettled([jsonpKlineAmt('1.000001'), jsonpKlineAmt('0.399001')]),
+    Promise.allSettled([jsonpFflow('1.000001'), jsonpFflow('0.399001')])
+  ]);
+  let got = false;
+  const a0 = amts[0].status === 'fulfilled' ? amts[0].value : null;
+  const a1 = amts[1].status === 'fulfilled' ? amts[1].value : null;
+  if (a0 || a1) {
+    const ysum = (a0 && a0.yest || 0) + (a1 && a1.yest || 0);
+    if (ysum > 0) { m.turnoverYest = ysum; got = true; }
+  }
+  const f0 = fl[0].status === 'fulfilled' ? fl[0].value : null;
+  const f1 = fl[1].status === 'fulfilled' ? fl[1].value : null;
+  if (f0 != null || f1 != null) { m.flow = (f0 || 0) + (f1 || 0); got = true; }
+  saveMacroStore(m);
+  renderMacroBar();
+  if (got && !silent) toast('宏观行情已更新');
 }
 function macTime(at) {
   if (!at) return '';
@@ -2015,7 +2039,7 @@ function renderMacroBar() {
   const m = macroStore();
   const t = macTime(m && m.at);
   const cards = [];
-  if (m && m.sh) {
+  if (m && m.at) {
     cards.push(macIndexCard('上证指数', 'SH 000001 · ' + t, m.sh));
     const turn = m.turnoverToday > 0 ? fmtYi(m.turnoverToday, 0) + '亿' : '--';
     let delta = null;
@@ -2032,7 +2056,7 @@ function renderMacroBar() {
       '<div class="mac-name">资金净流入</div>' +
       '<div class="mac-meta">沪深两市主力 · ' + t + '</div>' +
       '<div class="mac-val">' + flowTxt + '</div>' +
-      '<div class="mac-row"><span class="' + (Number.isFinite(m.flow) ? cls(m.flow) : '') + '">' + (m.flow >= 0 ? '净流入' : '净流出') + '</span></div>' +
+      '<div class="mac-row"><span class="' + (Number.isFinite(m.flow) ? cls(m.flow) : '') + '">' + (Number.isFinite(m.flow) ? (m.flow >= 0 ? '净流入' : '净流出') : '') + '</span></div>' +
     '</div>');
     cards.push(macIndexCard('纳斯达克', 'IXIC · ' + t, m.ndx));
     cards.push(macIndexCard('布油 UKOIL', 'Brent 当月 · ' + t, m.ou));
