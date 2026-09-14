@@ -3504,10 +3504,13 @@ async function loadMonitorData() {
     const { data, error } = await sb.from(MONITOR_TABLE).select('id,payload,meta,fetched_at');
     if (error) throw error;
     (data || []).forEach(r => {
+      const prev = state.monitoring[r.id];
+      const nv = r.payload || {};
+      const nd = (r.meta && typeof r.meta === 'object') ? (r.meta.dates || {}) : {};
       state.monitoring[r.id] = {
-        values: r.payload || {},
-        dates: (r.meta && typeof r.meta === 'object') ? (r.meta.dates || {}) : {},
-        fetchedAt: r.fetched_at || ''
+        values: Object.assign({}, prev && prev.values ? prev.values : {}, nv),
+        dates: Object.assign({}, prev && prev.dates ? prev.dates : {}, nd),
+        fetchedAt: r.fetched_at || (prev ? prev.fetchedAt : '')
       };
     });
   } catch (e) {
@@ -3529,13 +3532,20 @@ async function refreshMonitor(code, btn) {
     if (error) throw error;
     const r = data && Array.isArray(data.results) ? data.results[0] : null;
     if (!r || !r.ok) throw new Error((r && r.errors && r.errors.join(';')) || '抓取失败');
+    const prev = state.monitoring[code];
+    const nv = r.values || {};
+    const nd = (r.meta && typeof r.meta === 'object') ? (r.meta.dates || {}) : {};
     state.monitoring[code] = {
-      values: r.values || {},
-      dates: (r.meta && typeof r.meta === 'object') ? (r.meta.dates || {}) : {},
+      values: Object.assign({}, prev && prev.values ? prev.values : {}, nv),
+      dates: Object.assign({}, prev && prev.dates ? prev.dates : {}, nd),
       fetchedAt: data.fetchedAt || new Date().toISOString()
     };
     save();
-    toast(code + ' 监测数据已更新');
+    const misses = ['prem', 'ndxClose', 'ema200'].filter(k =>
+      !Number.isFinite(nv[k]) && Number.isFinite(state.monitoring[code].values[k]));
+    toast(misses.length
+      ? code + ' 部分指标本次未取到（' + misses.join('、') + '），已沿用上次值'
+      : code + ' 监测数据已更新');
   } catch (e) {
     const msg = String(e.message || e);
     toast(msg.includes('unauthorized') ? '刷新失败：MONITOR_SECRET 校验不过' : '刷新失败：' + msg);
