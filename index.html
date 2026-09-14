@@ -67,6 +67,15 @@ body{
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:16px 0 20px}
 .sum-card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 20px;box-shadow:0 1px 3px rgba(16,24,40,.05)}
+/* ===== 宏观指标条（v0.18.0）===== */
+.macrobar{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin:0 0 16px}
+.mac-card{border:1px solid var(--line);border-radius:9px;padding:8px 11px 9px;background:var(--card);box-shadow:0 1px 3px rgba(16,24,40,.05);min-width:0}
+.mac-card.up{background:rgba(244,67,54,.05);border-color:rgba(244,67,54,.25)}
+.mac-card.down{background:rgba(76,175,80,.05);border-color:rgba(76,175,80,.25)}
+.mac-name{font-size:12px;color:var(--text);font-weight:700;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mac-meta{font-size:10px;color:var(--faint);margin-bottom:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mac-val{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text);white-space:nowrap}
+.mac-row{display:flex;gap:8px;margin-top:2px;white-space:nowrap;font-size:10.5px;font-weight:600;font-variant-numeric:tabular-nums;overflow:hidden}
 .sum-lbl{font-size:13px;color:var(--muted);margin-bottom:6px}
 .sum-val{font-size:26px;font-weight:700}
 .sum-pct{font-size:15px;font-weight:400;opacity:.85}
@@ -279,8 +288,24 @@ body{
   width:100%;max-width:360px;background:#fff;border-radius:14px;
   padding:28px 24px;box-shadow:0 8px 30px rgba(16,24,40,.12);
 }
-/* ===== 行情K线（v0.17.0）===== */
+/* ===== 行情K线（v0.18.0）===== */
 .kline-grid{display:flex;flex-wrap:wrap;gap:14px}
+/* ===== 行情K线·导航与单卡舞台（v0.18.0）===== */
+.kline-nav{display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:6px;-webkit-overflow-scrolling:touch}
+.kline-nav::-webkit-scrollbar{height:0}
+.kli-navchip{flex:none;font-size:12.5px;color:var(--muted);border:1px solid var(--line);background:var(--card);border-radius:999px;padding:5px 12px;cursor:pointer;white-space:nowrap;user-select:none;-webkit-user-select:none}
+.kli-navchip.active{color:#fff;background:var(--accent);border-color:var(--accent);font-weight:600}
+.kli-navchip:hover:not(.active){border-color:var(--accent);color:var(--accent)}
+.kli-navchip.dragging{opacity:.4}
+.kli-navchip.drop-hint{background:var(--accent);color:#fff}
+.kline-stage{position:relative}
+.kline-hero-wrap{position:relative}
+.kli-hero{max-width:none;flex:1 1 100%}
+.kline-hero-wrap>.kline-arrow{position:absolute;top:50%;transform:translateY(-50%);z-index:5;width:36px;height:36px;font-size:22px;line-height:34px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer;box-shadow:0 2px 6px rgba(16,24,40,.12);padding:0}
+.kline-hero-wrap>.kline-arrow:hover{color:var(--accent);border-color:var(--accent)}
+.kline-arrow.prev{left:6px}
+.kline-arrow.next{right:6px}
+.kline-arrow:disabled{opacity:.35;cursor:default}
 .kline-card{
   flex:1 1 360px;min-width:340px;max-width:560px;
   background:var(--card);border:1px solid var(--line);border-radius:10px;
@@ -460,7 +485,7 @@ body{
   .ind-card{padding:8px 9px}
   .mk-bubble{right:-4px;width:min(300px,94vw)}
   .ind-grid{grid-template-columns:repeat(2,1fr)}
-  /* 行情K线：手机 1 列全宽（v0.17.0） */
+  /* 行情K线：单卡横滑（v0.18.0） */
   .kline-grid{gap:10px}
   .kline-card{flex:1 1 100%;min-width:0;padding:9px 10px}
   .kli-title{font-size:13px}
@@ -468,6 +493,16 @@ body{
   .kli-price{font-size:16px}
   .kli-pct{font-size:11.5px}
   .kli-cfg{padding:2px 5px;font-size:10.5px}
+  /* 宏观指标条：手机 2 排 3 列（v0.18.0） */
+  .macrobar{grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 12px}
+  .mac-card{padding:6px 9px 7px}
+  .mac-name{font-size:11px}
+  .mac-val{font-size:14px}
+  .mac-meta{font-size:9px}
+  .mac-row{font-size:9.5px}
+  .kline-nav{gap:5px;padding-bottom:6px}
+  .kli-navchip{font-size:11.5px;padding:4px 10px}
+  .kline-hero-wrap>.kline-arrow{width:30px;height:30px;font-size:18px;line-height:28px}
 }
 </style>
 </head>
@@ -492,6 +527,7 @@ body{
   </header>
 
   <section class="summary" id="summary"></section>
+  <section class="macrobar" id="macroBar"></section>
 
   <nav class="tabs">
     <button class="tab active" data-tab="holdings">当前持仓</button>
@@ -518,7 +554,8 @@ body{
       <div class="grow"></div>
       <button id="btnKlineRefresh" class="btn ghost">全部刷新</button>
     </div>
-    <div id="klineList"></div>
+    <div id="klineNav" class="kline-nav"></div>
+    <div id="klineList" class="kline-stage"></div>
     <p class="src-note" id="klineSrcNote"></p>
   </main>
 
@@ -1278,6 +1315,7 @@ function renderFilterOptions() {
 
 function renderAll() {
   renderSummary();
+  renderMacroBar();
   renderPlan();
   renderHoldings();
   renderKlines();
@@ -1730,7 +1768,7 @@ function isTradingTime() {
   const m = d.getHours() * 60 + d.getMinutes();
   return m >= 570 && m <= 900;
 }
-function jsonpQuote(secids) {
+function jsonpQuote(secids, fields) {
   return new Promise((resolve, reject) => {
     const cbName = 'jpQuote' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
     let done = false;
@@ -1749,7 +1787,7 @@ function jsonpQuote(secids) {
     };
     script.onerror = () => { cleanup(); reject(new Error('network')); };
     script.src = QUOTE_URL + '?secids=' + encodeURIComponent(secids) +
-      '&fields=' + QUOTE_FIELDS + '&fltt=2&cb=' + cbName + '&_=' + Date.now();
+      '&fields=' + (fields || QUOTE_FIELDS) + '&fltt=2&cb=' + cbName + '&_=' + Date.now();
     document.head.appendChild(script);
   });
 }
@@ -1811,14 +1849,209 @@ function setQuoteTimer() {
     quoteTimer = setInterval(() => {
       if (quoteBusy || document.hidden || !isTradingTime()) return;
       fetchQuotes(true);
+      fetchMacro(true);
     }, sec * 1000);
   }
 }
 
-/* ========================= 行情K线（v0.17.0）=========================
+/* ========================= 宏观指标条（v0.18.0）==========================
+   位置：summary 与 tabs 之间，全 Tab 显示
+   卡片：上证指数 / 成交总额(沪深两市) / 两市主力净流入 / 纳斯达克综指 / 布油UKOIL / 黄金9999
+   数据源=东财 ulist 实时行情(JSONP) + push2his 日K(昨日两市成交额 f57) + push2his 资金流(f52 主力净流入)
+   存储=invMacro_v1 本地缓存（纯行情数据，不入云端 settings）；红涨绿跌沿用 A 股口径
+*/
+const MACRO_CACHE_KEY = 'invMacro_v1';
+const MACRO_IDS = [
+  { key: 'sh', secid: '1.000001', meta: 'SH 000001' },
+  { key: 'ndx', secid: '100.NDX', meta: '纳指综指 IXIC' },
+  { key: 'ou', secid: '112.B00Y', meta: 'Brent 当月连续' },
+  { key: 'au', secid: '118.AU9999', meta: 'SGE AU9999' }
+];
+let macroBusy = false;
+function macroStore() {
+  try { return JSON.parse(localStorage.getItem(MACRO_CACHE_KEY)) || {}; } catch (e) { return {}; }
+}
+function saveMacroStore(m) {
+  try { localStorage.setItem(MACRO_CACHE_KEY, JSON.stringify(m)); } catch (e) {}
+}
+function pickMacro(q) {
+  if (!q || q.f2 == null) return null;
+  const p = Number(q.f2);
+  if (!Number.isFinite(p) || !(p > 0)) return null;
+  const c3 = Number(q.f3), c4 = Number(q.f4);
+  return {
+    code: String(q.f12 || ''),
+    name: String(q.f14 || '').trim(),
+    price: p,
+    pct: Number.isFinite(c3) ? c3 : null,
+    chg: Number.isFinite(c4) ? c4 : null
+  };
+}
+function macroYuan(x) {
+  const y = Number(x);
+  return Number.isFinite(y) && y > 0 ? y : 0;
+}
+function fmtYi(y, dec) {
+  const v = y / 1e8;
+  return (dec === 1) ? v.toFixed(1) : Math.round(v);
+}
+function jsonpKlineAmtHost(host, secid) {
+  return new Promise((resolve, reject) => {
+    const cbName = 'jpKA' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+    let done = false;
+    const script = document.createElement('script');
+    const cleanup = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(tid);
+      try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
+      if (script.parentNode) script.parentNode.removeChild(script);
+    };
+    const tid = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, KLINE_TIMEOUT);
+    window[cbName] = data => {
+      cleanup();
+      const ks = data && data.data && Array.isArray(data.data.klines) ? data.data.klines : null;
+      if (!ks || ks.length < 2) { reject(new Error('empty')); return; }
+      const prev = String(ks[ks.length - 2]).split(',');
+      resolve({ yest: macroYuan(prev[6]) });
+    };
+    script.onerror = () => { cleanup(); reject(new Error('network')); };
+    const beg = new Date(Date.now() - KLINE_BACK_DAYS * 86400000);
+    const begStr = beg.getFullYear() + String(beg.getMonth() + 1).padStart(2, '0') + String(beg.getDate()).padStart(2, '0');
+    script.src = host + '/api/qt/stock/kline/get?secid=' + encodeURIComponent(secid) +
+      '&klt=101&fqt=0&beg=' + begStr + '&end=20500101&lmt=120' +
+      '&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57' +
+      '&cb=' + cbName + '&_=' + Date.now();
+    document.head.appendChild(script);
+  });
+}
+async function jsonpKlineAmt(secid) {
+  let err = null;
+  for (const host of KLINE_HOSTS) {
+    try { return await jsonpKlineAmtHost(host, secid); } catch (e) { err = e; }
+  }
+  throw err || new Error('amt-failed');
+}
+function jsonpFflowHost(host, secid) {
+  return new Promise((resolve, reject) => {
+    const cbName = 'jpFl' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+    let done = false;
+    const script = document.createElement('script');
+    const cleanup = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(tid);
+      try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
+      if (script.parentNode) script.parentNode.removeChild(script);
+    };
+    const tid = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, KLINE_TIMEOUT);
+    window[cbName] = data => {
+      cleanup();
+      const ks = data && data.data && Array.isArray(data.data.klines) ? data.data.klines : null;
+      if (!ks || !ks.length) { reject(new Error('empty')); return; }
+      const last = String(ks[ks.length - 1]).split(',');
+      const v = Number(last[1]);
+      resolve(Number.isFinite(v) ? v : 0);
+    };
+    script.onerror = () => { cleanup(); reject(new Error('network')); };
+    script.src = host + '/api/qt/stock/fflow/daykline/get?lmt=2&klt=101' +
+      '&secid=' + encodeURIComponent(secid) +
+      '&fields1=f1,f2,f3,f7&fields2=f51,f52&cb=' + cbName + '&_=' + Date.now();
+    document.head.appendChild(script);
+  });
+}
+async function jsonpFflow(secid) {
+  let err = null;
+  for (const host of KLINE_HOSTS) {
+    try { return await jsonpFflowHost(host, secid); } catch (e) { err = e; }
+  }
+  throw err || new Error('flow-failed');
+}
+async function fetchMacro(silent) {
+  if (macroBusy) return;
+  macroBusy = true;
+  try {
+    const diff = await jsonpQuote('1.000001,0.399001,100.NDX,112.B00Y,118.AU9999', 'f12,f14,f2,f3,f4,f6');
+    const by = {};
+    diff.forEach(q => { by[q.f12] = q; });
+    const m = { at: Date.now(), date: today() };
+    MACRO_IDS.forEach(it => { m[it.key] = pickMacro(by[it.code]); });
+    m.turnoverToday = macroYuan(by['000001'] && by['000001'].f6) + macroYuan(by['399001'] && by['399001'].f6);
+    const amts = await Promise.all([jsonpKlineAmt('1.000001'), jsonpKlineAmt('0.399001')]);
+    m.turnoverYest = (amts[0] && amts[0].yest || 0) + (amts[1] && amts[1].yest || 0);
+    const fl = await Promise.all([jsonpFflow('1.000001'), jsonpFflow('0.399001')]);
+    m.flow = (fl[0] || 0) + (fl[1] || 0);
+    saveMacroStore(m);
+    renderMacroBar();
+    if (!silent) toast('宏观行情已更新');
+    return m;
+  } catch (e) {
+    if (!silent) quoteErrToast(true, '宏观数据拉取失败');
+    return null;
+  } finally {
+    macroBusy = false;
+  }
+}
+function macTime(at) {
+  if (!at) return '';
+  const d = new Date(at);
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+function macIndexCard(name, meta, it) {
+  const dir = it && it.pct != null ? cls(it.pct) : '';
+  const val = it ? it.price.toFixed(2) : '--';
+  const chg = it && it.chg != null ? (it.chg > 0 ? '+' : '') + it.chg.toFixed(2) : '--';
+  const pct = it && it.pct != null ? (it.pct > 0 ? '+' : '') + it.pct.toFixed(2) + '%' : '--';
+  return '<div class="mac-card ' + (dir || '') + '">' +
+    '<div class="mac-name">' + esc(name) + '</div>' +
+    '<div class="mac-meta">' + esc(meta) + '</div>' +
+    '<div class="mac-val">' + val + '</div>' +
+    '<div class="mac-row"><span class="' + (dir || '') + '">' + chg + '</span><span class="' + (dir || '') + '">' + pct + '</span></div>' +
+  '</div>';
+}
+function renderMacroBar() {
+  const bar = el('macroBar');
+  if (!bar) return;
+  const m = macroStore();
+  const t = macTime(m && m.at);
+  const cards = [];
+  if (m && m.sh) {
+    cards.push(macIndexCard('上证指数', 'SH 000001 · ' + t, m.sh));
+    const turn = m.turnoverToday > 0 ? fmtYi(m.turnoverToday, 0) + '亿' : '--';
+    let delta = null;
+    if (m.turnoverToday > 0 && m.turnoverYest > 0) delta = m.turnoverToday - m.turnoverYest;
+    const deltaTxt = delta == null ? '--' : ((delta >= 0 ? '放量 +' : '缩量 ') + fmtYi(delta, 0) + '亿');
+    cards.push('<div class="mac-card">' +
+      '<div class="mac-name">成交总额</div>' +
+      '<div class="mac-meta">沪深两市 · ' + t + '</div>' +
+      '<div class="mac-val">' + turn + '</div>' +
+      '<div class="mac-row"><span class="' + (delta != null ? cls(delta) : '') + '">' + deltaTxt + '</span></div>' +
+    '</div>');
+    const flowTxt = m.flow != null && Number.isFinite(m.flow) ? ((m.flow >= 0 ? '+' : '') + fmtYi(m.flow, 1) + '亿') : '--';
+    cards.push('<div class="mac-card">' +
+      '<div class="mac-name">资金净流入</div>' +
+      '<div class="mac-meta">沪深两市主力 · ' + t + '</div>' +
+      '<div class="mac-val">' + flowTxt + '</div>' +
+      '<div class="mac-row"><span class="' + (Number.isFinite(m.flow) ? cls(m.flow) : '') + '">' + (m.flow >= 0 ? '净流入' : '净流出') + '</span></div>' +
+    '</div>');
+    cards.push(macIndexCard('纳斯达克', 'IXIC · ' + t, m.ndx));
+    cards.push(macIndexCard('布油 UKOIL', 'Brent 当月 · ' + t, m.ou));
+    cards.push(macIndexCard('黄金9999', 'SGE AU9999 · ' + t, m.au));
+  } else {
+    for (let i = 0; i < 6; i++) {
+      cards.push('<div class="mac-card"><div class="mac-name">--</div><div class="mac-meta">加载中…</div>' +
+        '<div class="mac-val">--</div><div class="mac-row"><span>--</span></div></div>');
+    }
+  }
+  bar.innerHTML = cards.join('');
+}
+
+/* ========================= 行情K线（v0.18.0）=========================
    卡片=标的名称 + 现价/距最近买价% + 近一个月日K蜡烛图 + 买卖点标注（B/S）+ 网格线(含±%标签)
    + 底部时间条（v0.17.0：左端压缩/拖图平移/双击恢复全月；窗口=左侧日期klineFrom，右端=最新，
    经 settings 云端同步；手机 1 列全宽）
+   + 单卡横滑（v0.18.0：顶部芯片条点跳转/拖动排序(改用全局 order)；单卡舞台 + ‹› 箭头 + 键盘←→
+   + 触屏横滑切换；桌面鼠标主图拖动仍平移窗口，触摸=滑卡；底部时间条拖动不受影响）
    数据源=东方财富 push2his 日K（JSONP，与实时行情同一套机制）；localStorage 按 code 缓存当天
 */
 const KLINE_HOSTS = ['https://push2his.eastmoney.com', 'https://92.push2his.eastmoney.com'];
@@ -1943,21 +2176,63 @@ async function lazyLoadKlines(force) {
   if (ok > 0) toast(force ? 'K线已更新 ' + ok + ' 只' : '已加载 ' + ok + ' 只K线');
   else toast('K线拉取失败，暂用缓存数据展示');
 }
+let klineSelId = null;
+try { klineSelId = localStorage.getItem('invKlineSel_v1') || null; } catch (e) {}
+function klineSelOf(hs) {
+  if (!hs.length) return null;
+  if (klineSelId && hs.some(h => h.id === klineSelId)) return hs.findIndex(h => h.id === klineSelId);
+  klineSelId = hs[0].id;
+  return 0;
+}
 function renderKlines() {
   const list = el('klineList');
+  const nav = el('klineNav');
   if (!list) return;
   const hs = klineTargets();
   if (!hs.length) {
     list.innerHTML = '<div class="empty">暂无场内持仓，可在「当前持仓」新增 <b>ETF/股票</b> 后查看K线。</div>';
+    if (nav) nav.innerHTML = '';
     el('klineSrcNote').textContent = '';
     return;
   }
-  list.innerHTML = '<div class="kline-grid">' + hs.map(h => klineCardHTML(h)).join('') + '</div>';
-  hs.forEach(h => {
-    const card = list.querySelector && list.querySelector('.kline-card[data-id="' + h.id + '"]');
-    if (card) initKlineScrub(card, h);
-  });
+  let sel = klineSelOf(hs);
+  if (sel == null) sel = 0;
+  klineSelId = hs[sel].id;
+  try { localStorage.setItem('invKlineSel_v1', klineSelId); } catch (e) {}
+  if (nav) {
+    nav.innerHTML = hs.map((x, i) =>
+      '<button class="kli-navchip' + (i === sel ? ' active' : '') + '" data-sel="' + x.id + '">' + esc(x.name) + '</button>'
+    ).join('');
+  }
+  const prevBtn = sel > 0 ? '<button class="kline-arrow prev" data-step="-1" title="上一个标的">‹</button>' : '';
+  const nextBtn = sel < hs.length - 1 ? '<button class="kline-arrow next" data-step="1" title="下一个标的">›</button>' : '';
+  const cardHTML = klineCardHTML(hs[sel]).replace('kline-card', 'kline-card kli-hero');
+  list.innerHTML = '<div class="kline-hero-wrap">' + prevBtn + cardHTML + nextBtn + '</div>';
+  const card = list.querySelector('.kli-hero');
+  if (card) {
+    initKlineScrub(card, hs[sel]);
+    initKlineSwipe(card, hs, sel);
+  }
   el('klineSrcNote').textContent = 'K线来源：东方财富公开历史行情（近一个月日K）；B/S 标记为你录入的交易流水，网格线 = 最近一次买入价 × (1±配置%)；时间窗口：拖动可视化下方时间条左端压缩、拖动图表平移，双击时间条恢复全月，窗口跟随云端同步。';
+}
+function initKlineSwipe(card, hs, sel) {
+  let sx = null, sy = null, pid = null;
+  card.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'touch') return;
+    if (e.target.closest('.kli-tl')) return;
+    sx = e.clientX; sy = e.clientY; pid = e.pointerId;
+  });
+  window.addEventListener('pointerup', e => {
+    if (e.pointerId !== pid) return;
+    pid = null;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    sx = null; sy = null;
+    if (Math.abs(dy) > Math.abs(dx) * 1.4 || Math.abs(dx) < 60) return;
+    const ns = sel + (dx < 0 ? 1 : -1);
+    if (ns < 0 || ns >= hs.length) return;
+    klineSelId = hs[ns].id;
+    renderKlines();
+  });
 }
 function klineCardHTML(h) {
   const lastBuy = lastBuyPriceOf(h);
@@ -2199,7 +2474,10 @@ function initKlineScrub(card, h) {
     const x0 = padL + step * (i0 + 0.5);
     begin(svgT, Math.abs(u - x0) < Math.max(10, step / 2) ? 'thumb' : 'win', e);
   };
-  const startM = e => begin(svgM, 'win', e);
+  const startM = e => {
+    if (e.pointerType === 'touch') return;
+    begin(svgM, 'win', e);
+  };
   svgT.addEventListener('pointerdown', startT);
   svgM.addEventListener('pointerdown', startM);
   svgT.addEventListener('pointermove', onMove);
@@ -3230,6 +3508,41 @@ async function refreshMonitor(code, btn) {
 }
 /* =================== 定投参考 END =================== */
 
+function initChipDragSort() {
+  const nav = el('klineNav');
+  if (!nav) return;
+  let dragId = null;
+  nav.addEventListener('dragstart', e => {
+    const c = e.target.closest('.kli-navchip');
+    if (!c) return;
+    dragId = c.dataset.sel;
+    c.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', dragId); } catch (err) {}
+  });
+  nav.addEventListener('dragend', () => {
+    dragId = null;
+    nav.querySelectorAll('.dragging,.drop-hint').forEach(x => x.classList.remove('dragging', 'drop-hint'));
+  });
+  nav.addEventListener('dragover', e => {
+    if (!dragId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const c = e.target.closest('.kli-navchip');
+    nav.querySelectorAll('.drop-hint').forEach(x => x.classList.remove('drop-hint'));
+    if (c && c.dataset.sel !== dragId) c.classList.add('drop-hint');
+  });
+  nav.addEventListener('drop', e => {
+    if (!dragId) return;
+    e.preventDefault();
+    const c = e.target.closest('.kli-navchip');
+    const targetId = c && c.dataset.sel !== dragId ? c.dataset.sel : null;
+    if (targetId) applyReorder(dragId, targetId);
+    dragId = null;
+    nav.querySelectorAll('.dragging,.drop-hint').forEach(x => x.classList.remove('dragging', 'drop-hint'));
+  });
+}
+
 function bindEvents() {
   document.addEventListener('click', e => {
     const t = e.target;
@@ -3252,9 +3565,42 @@ function bindEvents() {
   });
 
   el('btnKlineRefresh').onclick = () => lazyLoadKlines(true);
+  el('klineNav').addEventListener('click', e => {
+    const chip = e.target.closest('[data-sel]');
+    if (!chip) return;
+    klineSelId = chip.dataset.sel;
+    renderKlines();
+  });
   el('klineList').addEventListener('click', e => {
+    const arr = e.target.closest('[data-step]');
+    if (arr) {
+      const hs = klineTargets();
+      const sel = klineSelOf(hs);
+      if (sel == null) return;
+      const ns = sel + (Number(arr.dataset.step) || 0);
+      if (ns < 0 || ns >= hs.length) return;
+      klineSelId = hs[ns].id;
+      renderKlines();
+      return;
+    }
     const cfg = e.target.closest('[data-act="grid"]');
     if (cfg) openGridModal(cfg.dataset.id);
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const kview = el('view-kline');
+    if (!kview || !kview.classList.contains('active')) return;
+    const tag = document.activeElement && document.activeElement.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (document.querySelector('.overlay')) return;
+    const hs = klineTargets();
+    const sel = klineSelOf(hs);
+    if (sel == null) return;
+    const ns = sel + (e.key === 'ArrowRight' ? 1 : -1);
+    if (ns < 0 || ns >= hs.length) return;
+    e.preventDefault();
+    klineSelId = hs[ns].id;
+    renderKlines();
   });
 
   el('monitorList').addEventListener('click', e => {
@@ -3294,12 +3640,13 @@ function bindEvents() {
 
   initDragSort();
   initTouchDragSort();
+  initChipDragSort();
   if (mqMobile.addEventListener) mqMobile.addEventListener('change', renderAll);
   else if (mqMobile.addListener) mqMobile.addListener(renderAll);
 
   el('btnRefresh').onclick = openRefreshModal;
   el('btnNewHolding').onclick = openNewHoldingModal;
-  el('btnQuote').onclick = () => fetchQuotes(false);
+  el('btnQuote').onclick = () => { fetchQuotes(false); fetchMacro(true); };
   const qSel = el('quoteAuto');
   if (state && state.settings) qSel.value = String(state.settings.quoteAutoSec);
   qSel.onchange = e => {
@@ -3374,6 +3721,7 @@ function localBoot() {
   renderAll();
   setQuoteTimer();
   fetchQuotes(true);
+  fetchMacro(true);
   showCorruptDialogIfAny();
 }
 async function startCloudSession() {
@@ -3418,6 +3766,7 @@ async function startCloudSession() {
     }
     setQuoteTimer();
     fetchQuotes(true);
+    fetchMacro(true);
     showCorruptDialogIfAny();
   } catch (e) {
     sessionReady = true;
@@ -3427,6 +3776,7 @@ async function startCloudSession() {
     renderAll();
     setQuoteTimer();
     fetchQuotes(true);
+    fetchMacro(true);
     setSyncDot('err', '云端暂不可达，当前使用本地缓存');
     toast('云端暂不可达，当前使用本地缓存');
     showCorruptDialogIfAny();
