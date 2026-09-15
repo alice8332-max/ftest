@@ -111,8 +111,6 @@ body{
 .hold-table tr.dragging{opacity:.35}
 .hold-table tr.drop-hint td{box-shadow:inset 0 3px 0 var(--warn)}
 .hold-table tr[draggable]{cursor:grab}
-.hold-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
-.hold-toolbar .grow{flex:1}
 .hold-fund-row{display:flex;align-items:center;gap:12px;padding:10px 12px;font-size:13px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:10px;margin-top:10px}
 .hold-fund-row .num{font-weight:600}
 .idx{color:var(--muted);font-size:13px;font-weight:400;width:20px;text-align:right}
@@ -305,7 +303,6 @@ body{
 .kline-hero-wrap>.kline-arrow:hover{color:var(--accent);border-color:var(--accent)}
 .kline-arrow.prev{left:6px}
 .kline-arrow.next{right:6px}
-.kline-arrow:disabled{opacity:.35;cursor:default}
 .kline-card{
   flex:1 1 360px;min-width:340px;max-width:560px;
   background:var(--card);border:1px solid var(--line);border-radius:10px;
@@ -548,7 +545,6 @@ body{
     <div class="section-head">
       <h2 id="holdingsTitle">当前持仓（0只）</h2>
       <div class="grow"></div>
-      <button id="btnRefresh" class="btn ghost" title="手动批量录入现价（兜底；在线拉取用顶栏「⟳ 行情」）">手动</button>
       <button id="btnNewHolding" class="btn primary">+新增持仓</button>
     </div>
     <div id="holdingList"></div>
@@ -557,8 +553,6 @@ body{
   <main id="view-kline" class="view active" data-view="kline">
     <div class="section-head">
       <h2>行情K线</h2>
-      <div class="grow"></div>
-      <button id="btnKlineRefresh" class="btn ghost">全部刷新</button>
     </div>
     <div id="klineNav" class="kline-nav"></div>
     <div id="klineList" class="kline-stage"></div>
@@ -876,19 +870,22 @@ async function forcePush() {
     syncBusy = false;
   }
 }
+function applyRemoteState(norm, baseRev, okMsg) {
+  clearTimeout(pushTimer);
+  pushTimer = null;
+  state = norm;
+  syncMeta.baseRevision = Number(baseRev);
+  syncMeta.dirty = false;
+  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  saveSyncMeta();
+  renderAll();
+  setSyncDot('ok', '已同步到云端');
+  if (okMsg) toast(okMsg);
+  return true;
+}
 function adoptRemote(row) {
   try {
-    const norm = normalizeImport(row.data);
-    clearTimeout(pushTimer);
-    pushTimer = null;
-    state = norm;
-    syncMeta.baseRevision = Number(row.revision);
-    syncMeta.dirty = false;
-    localStorage.setItem(STORE_KEY, JSON.stringify(state));
-    saveSyncMeta();
-    renderAll();
-    setSyncDot('ok', '已同步到云端');
-    return true;
+    return applyRemoteState(normalizeImport(row.data), row.revision);
   } catch (e) { return false; }
 }
 async function handlePushConflict() {
@@ -917,16 +914,7 @@ function conflictDialog(remoteRow) {
   ov.querySelector('[data-remote]').onclick = () => {
     ov.close();
     if (!remoteNorm) { toast('云端数据异常，无法加载'); return; }
-    clearTimeout(pushTimer);
-    pushTimer = null;
-    state = remoteNorm;
-    syncMeta.baseRevision = remoteRow.revision;
-    syncMeta.dirty = false;
-    localStorage.setItem(STORE_KEY, JSON.stringify(state));
-    saveSyncMeta();
-    renderAll();
-    setSyncDot('ok', '已同步到云端');
-    toast('已加载云端最新数据');
+    applyRemoteState(remoteNorm, remoteRow.revision, '已加载云端最新数据');
   };
   ov.querySelector('[data-force]').onclick = async () => {
     ov.close();
@@ -1206,16 +1194,7 @@ function renderHoldings() {
         '<span class="hg-head">操作</span></div>';
     }
     for (const h of etfs) {
-      const r = posPL(h), day = dayPLOf(h), lbp = lastBuyPriceOf(h);
-      const esc_ = esc; const cls_ = cls; const fmtPct_ = fmtPct; const fmtSigned_ = fmtSigned; const fmtPrice_ = fmtPrice;
-      html += '<div class="hold-row" data-id="' + h.id + '" draggable="' + (holdSort.key ? 'false' : 'true') + '">' +
-        '<div class="hg-cell"><span class="code">' + esc_(h.code) + '</span><span class="name">' + esc_(h.name) + '</span></div>' +
-        '<div class="hg-cell n">' + (r ? '<span class="v1 ' + cls_(r.pl) + '">' + fmtSigned_(r.pl) + '</span><span class="v2 ' + cls_(r.pl) + '">' + fmtPct_(r.pct) + '</span>' : '<span class="v1">--</span><span class="v2">--</span>') + '</div>' +
-        '<div class="hg-cell n"><span class="v1">' + (h.currentPrice > 0 ? fmtPrice_(h.currentPrice, h.type) : '--') + '</span></div>' +
-        '<div class="hg-cell n"><span class="v1">' + (h.avgCost > 0 ? fmtPrice_(h.avgCost, h.type) : '--') + '</span><span class="v2">' + (lbp !== null ? fmtPrice_(lbp, h.type) : '--') + '</span></div>' +
-        '<div class="hg-cell n">' + (day ? '<span class="v1 ' + cls_(day.pl) + '">' + fmtSigned_(day.pl) + '</span><span class="v2 ' + cls_(day.pl) + '">' + fmtPct_(day.pct) + '</span>' : '<span class="v1">--</span><span class="v2">--</span>') + '</div>' +
-        '<div class="hg-cell hold-ops"><button class="btn chip buy" data-act="buy">买</button><button class="btn chip sell" data-act="sell">卖</button></div>' +
-      '</div>';
+      html += holdRowHTML(h, posPL(h), dayPLOf(h), lastBuyPriceOf(h));
     }
     html += '</div>';
     for (const h of funds) {
@@ -1262,6 +1241,16 @@ function renderHoldings() {
     }
   }
   el('holdingList').innerHTML = html;
+}
+function holdRowHTML(h, r, day, lbp) {
+  return '<div class="hold-row" data-id="' + h.id + '" draggable="' + (holdSort.key ? 'false' : 'true') + '">' +
+    '<div class="hg-cell"><span class="code">' + esc(h.code) + '</span><span class="name">' + esc(h.name) + '</span></div>' +
+    '<div class="hg-cell n">' + (r ? '<span class="v1 ' + cls(r.pl) + '">' + fmtSigned(r.pl) + '</span><span class="v2 ' + cls(r.pl) + '">' + fmtPct(r.pct) + '</span>' : '<span class="v1">--</span><span class="v2">--</span>') + '</div>' +
+    '<div class="hg-cell n"><span class="v1">' + (h.currentPrice > 0 ? fmtPrice(h.currentPrice, h.type) : '--') + '</span></div>' +
+    '<div class="hg-cell n"><span class="v1">' + (h.avgCost > 0 ? fmtPrice(h.avgCost, h.type) : '--') + '</span><span class="v2">' + (lbp !== null ? fmtPrice(lbp, h.type) : '--') + '</span></div>' +
+    '<div class="hg-cell n">' + (day ? '<span class="v1 ' + cls(day.pl) + '">' + fmtSigned(day.pl) + '</span><span class="v2 ' + cls(day.pl) + '">' + fmtPct(day.pct) + '</span>' : '<span class="v1">--</span><span class="v2">--</span>') + '</div>' +
+    '<div class="hg-cell hold-ops"><button class="btn chip buy" data-act="buy">买</button><button class="btn chip sell" data-act="sell">卖</button></div>' +
+  '</div>';
 }
 
 function txRows() {
@@ -1515,9 +1504,7 @@ function openNewHoldingModal() {
     } else if (!msg) {
       s = parseFloat(qty.value);
       p = parseFloat(price.value);
-      if (!(s > 0)) msg = '请输入正确的买入数量';
-      else if (!Number.isInteger(s)) msg = '场内ETF数量须为整数';
-      else if (!(p > 0)) msg = '请输入正确的单价';
+      msg = checkShares(s) || (!(p > 0) ? '请输入正确的单价' : '');
     }
     if (msg) { errEl.textContent = msg; return; }
     let h;
@@ -1594,59 +1581,6 @@ function openEditModal(id) {
     renderAll();
     ov.close();
     toast('已保存修改');
-  };
-}
-
-function openRefreshModal() {
-  const hs = sortedHoldings().filter(h => !h.cleared && h.type !== 'fund');
-  if (!hs.length) { toast('暂无可更新的标的'); return; }
-  const rows = hs.map(h =>
-    '<tr data-id="' + h.id + '"><td>' + esc(h.code) + ' ' + esc(h.name) + '</td>' +
-    '<td><input class="b-prev" type="number" step="0.001" min="0" placeholder="选填"></td>' +
-    '<td><input class="b-open" type="number" step="0.001" min="0" placeholder="选填"></td>' +
-    '<td><input class="b-cur" type="number" step="0.001" min="0" placeholder="必填"></td></tr>'
-  ).join('');
-  const body =
-    '<div class="hint">现价为必填；昨收、今开选填，不填则该标的今日盈亏显示为 --。保存后统一更新现价并刷新更新日期。</div>' +
-    '<table class="batch-table"><thead><tr><th>标的</th><th>昨收（选填）</th><th>今开（选填）</th><th>现价</th></tr></thead><tbody>' + rows + '</tbody></table>' +
-    '<div class="err" id="bErr"></div>';
-  const ov = openModal({
-    title: '刷新 - 批量录入现价',
-    body,
-    foot: '<button class="btn" data-x>取消</button><button class="btn primary" data-save>保存全部</button>',
-    wide: true
-  });
-  ov.querySelector('[data-x]').onclick = ov.close;
-  ov.querySelector('[data-save]').onclick = () => {
-    const errEl = ov.querySelector('#bErr');
-    const updates = [];
-    let bad = '';
-    for (const tr of ov.querySelectorAll('tr[data-id]')) {
-      const h = getHolding(tr.dataset.id);
-      if (!h) continue;
-      const pv = parseFloat(tr.querySelector('.b-prev').value);
-      const opv = parseFloat(tr.querySelector('.b-open').value);
-      const cv = parseFloat(tr.querySelector('.b-cur').value);
-      if (!(cv > 0)) { bad = h.code + '：请填写现价'; break; }
-      updates.push(() => {
-        h.currentPrice = cv;
-        if (pv > 0) {
-          h.prevClose = pv;
-          h.todayOpen = opv > 0 ? opv : 0;
-        } else {
-          h.prevClose = 0;
-          h.todayOpen = 0;
-        }
-      });
-    }
-    if (bad) { errEl.textContent = bad; return; }
-    updates.forEach(fn => fn());
-    const d = today();
-    hs.forEach(h => { h.lastUpdate = d; });
-    save();
-    renderAll();
-    ov.close();
-    toast('已更新 ' + updates.length + ' 只标的现价');
   };
 }
 
@@ -1780,9 +1714,9 @@ function isTradingTime() {
   const m = d.getHours() * 60 + d.getMinutes();
   return m >= 570 && m <= 900;
 }
-function jsonpQuote(secids, fields) {
+function jsonpGet(cbPrefix, timeout, buildUrl, parse) {
   return new Promise((resolve, reject) => {
-    const cbName = 'jpQuote' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+    const cbName = cbPrefix + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
     let done = false;
     const script = document.createElement('script');
     const cleanup = () => {
@@ -1792,16 +1726,21 @@ function jsonpQuote(secids, fields) {
       try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
       if (script.parentNode) script.parentNode.removeChild(script);
     };
-    const tid = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, QUOTE_TIMEOUT);
+    const tid = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, timeout);
     window[cbName] = data => {
       cleanup();
-      resolve(data && data.data && Array.isArray(data.data.diff) ? data.data.diff : []);
+      try { resolve(parse(data)); } catch (e) { reject(e); }
     };
     script.onerror = () => { cleanup(); reject(new Error('network')); };
-    script.src = QUOTE_URL + '?secids=' + encodeURIComponent(secids) +
-      '&fields=' + (fields || QUOTE_FIELDS) + '&fltt=2&cb=' + cbName + '&_=' + Date.now();
+    script.src = buildUrl(cbName);
     document.head.appendChild(script);
   });
+}
+function jsonpQuote(secids, fields) {
+  return jsonpGet('jpQuote', QUOTE_TIMEOUT,
+    cbName => QUOTE_URL + '?secids=' + encodeURIComponent(secids) +
+      '&fields=' + (fields || QUOTE_FIELDS) + '&fltt=2&cb=' + cbName + '&_=' + Date.now(),
+    data => (data && data.data && Array.isArray(data.data.diff)) ? data.data.diff : []);
 }
 function quoteErrToast(silent, msg) {
   if (!silent) { toast(msg); return; }
@@ -1839,8 +1778,7 @@ async function fetchQuotes(silent) {
       renderAll();
       let tstr = '';
       if (ts > 0) {
-        const qt = new Date(ts * 1000);
-        tstr = ' · 行情 ' + String(qt.getHours()).padStart(2, '0') + ':' + String(qt.getMinutes()).padStart(2, '0');
+        tstr = ' · 行情 ' + macTime(ts * 1000);
       }
       if (!silent) toast('已更新 ' + updated.length + ' 只标的现价' + tstr);
     } else {
@@ -1909,77 +1847,46 @@ function fmtYi(y, dec) {
   const v = y / 1e8;
   return (dec === 1) ? v.toFixed(1) : Math.round(v);
 }
+async function fetchWithHostRetry(hosts, call) {
+  let err = null;
+  for (const host of hosts) {
+    try { return await call(host); } catch (e) { err = e; }
+  }
+  throw err || new Error('request-failed');
+}
 function jsonpKlineAmtHost(host, secid) {
-  return new Promise((resolve, reject) => {
-    const cbName = 'jpKA' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
-    let done = false;
-    const script = document.createElement('script');
-    const cleanup = () => {
-      if (done) return;
-      done = true;
-      clearTimeout(tid);
-      try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
-      if (script.parentNode) script.parentNode.removeChild(script);
-    };
-    const tid = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, KLINE_TIMEOUT);
-    window[cbName] = data => {
-      cleanup();
-      const ks = data && data.data && Array.isArray(data.data.klines) ? data.data.klines : null;
-      if (!ks || ks.length < 2) { reject(new Error('empty')); return; }
-      const prev = String(ks[ks.length - 2]).split(',');
-      resolve({ yest: macroYuan(prev[6]) });
-    };
-    script.onerror = () => { cleanup(); reject(new Error('network')); };
-    const beg = new Date(Date.now() - KLINE_BACK_DAYS * 86400000);
-    const begStr = beg.getFullYear() + String(beg.getMonth() + 1).padStart(2, '0') + String(beg.getDate()).padStart(2, '0');
-    script.src = host + '/api/qt/stock/kline/get?secid=' + encodeURIComponent(secid) +
+  const beg = new Date(Date.now() - KLINE_BACK_DAYS * 86400000);
+  const begStr = beg.getFullYear() + String(beg.getMonth() + 1).padStart(2, '0') + String(beg.getDate()).padStart(2, '0');
+  return jsonpGet('jpKA', KLINE_TIMEOUT,
+    cbName => host + '/api/qt/stock/kline/get?secid=' + encodeURIComponent(secid) +
       '&klt=101&fqt=0&beg=' + begStr + '&end=20500101&lmt=120' +
       '&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57' +
-      '&cb=' + cbName + '&_=' + Date.now();
-    document.head.appendChild(script);
-  });
+      '&cb=' + cbName + '&_=' + Date.now(),
+    data => {
+      const ks = data && data.data && Array.isArray(data.data.klines) ? data.data.klines : null;
+      if (!ks || ks.length < 2) { throw new Error('empty'); }
+      const prev = String(ks[ks.length - 2]).split(',');
+      return { yest: macroYuan(prev[6]) };
+    });
 }
-async function jsonpKlineAmt(secid) {
-  let err = null;
-  for (const host of KLINE_HOSTS) {
-    try { return await jsonpKlineAmtHost(host, secid); } catch (e) { err = e; }
-  }
-  throw err || new Error('amt-failed');
+function jsonpKlineAmt(secid) {
+  return fetchWithHostRetry(KLINE_HOSTS, host => jsonpKlineAmtHost(host, secid));
 }
 function jsonpFflowHost(host, secid) {
-  return new Promise((resolve, reject) => {
-    const cbName = 'jpFl' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
-    let done = false;
-    const script = document.createElement('script');
-    const cleanup = () => {
-      if (done) return;
-      done = true;
-      clearTimeout(tid);
-      try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
-      if (script.parentNode) script.parentNode.removeChild(script);
-    };
-    const tid = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, KLINE_TIMEOUT);
-    window[cbName] = data => {
-      cleanup();
+  return jsonpGet('jpFl', KLINE_TIMEOUT,
+    cbName => host + '/api/qt/stock/fflow/daykline/get?lmt=2&klt=101' +
+      '&secid=' + encodeURIComponent(secid) +
+      '&fields1=f1,f2,f3,f7&fields2=f51,f52&cb=' + cbName + '&_=' + Date.now(),
+    data => {
       const ks = data && data.data && Array.isArray(data.data.klines) ? data.data.klines : null;
-      if (!ks || !ks.length) { reject(new Error('empty')); return; }
+      if (!ks || !ks.length) { throw new Error('empty'); }
       const last = String(ks[ks.length - 1]).split(',');
       const v = Number(last[1]);
-      resolve(Number.isFinite(v) ? v : 0);
-    };
-    script.onerror = () => { cleanup(); reject(new Error('network')); };
-    script.src = host + '/api/qt/stock/fflow/daykline/get?lmt=2&klt=101' +
-      '&secid=' + encodeURIComponent(secid) +
-      '&fields1=f1,f2,f3,f7&fields2=f51,f52&cb=' + cbName + '&_=' + Date.now();
-    document.head.appendChild(script);
-  });
+      return Number.isFinite(v) ? v : 0;
+    });
 }
-async function jsonpFflow(secid) {
-  let err = null;
-  for (const host of KLINE_HOSTS) {
-    try { return await jsonpFflowHost(host, secid); } catch (e) { err = e; }
-  }
-  throw err || new Error('flow-failed');
+function jsonpFflow(secid) {
+  return fetchWithHostRetry(KLINE_HOSTS, host => jsonpFflowHost(host, secid));
 }
 async function fetchMacro(silent) {
   if (macroBusy) return;
@@ -2002,7 +1909,7 @@ async function fetchMacro(silent) {
     saveMacroStore(m);
     renderMacroBar();
   } catch (e) {
-    if (!silent) quoteErrToast(true, '宏观数据拉取失败');
+    if (!silent) quoteErrToast(silent, '宏观数据拉取失败');
   } finally {
     macroBusy = false;
   }
@@ -2100,6 +2007,7 @@ const KLINE_WINDOW_DAYS = 31;
 const GRID_DEFAULT = [-5, -3, 3, 5];
 const K_BLUE = '#2563eb';
 const K_YELLOW = '#e19100';
+const KLINE_EMPTY_HTML = '<div class="empty">暂无场内持仓，可在「当前持仓」新增 <b>ETF/股票</b> 后查看K线。</div>';
 let klineCache = null;
 let klineBusy = {};
 let klineFails = {};
@@ -2119,22 +2027,17 @@ function gridOf(h) {
   return Array.isArray(arr) && arr.length ? arr.slice() : GRID_DEFAULT.slice();
 }
 function jsonpKlineHost(secid, host) {
-  return new Promise((resolve, reject) => {
-    const cbName = 'jpKline' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
-    let done = false;
-    const script = document.createElement('script');
-    const cleanup = () => {
-      if (done) return;
-      done = true;
-      clearTimeout(tid);
-      try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
-      if (script.parentNode) script.parentNode.removeChild(script);
-    };
-    const tid = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, KLINE_TIMEOUT);
-    window[cbName] = data => {
-      cleanup();
+  const beg = new Date(Date.now() - KLINE_BACK_DAYS * 86400000);
+  const begStr = beg.getFullYear() + String(beg.getMonth() + 1).padStart(2, '0') + String(beg.getDate()).padStart(2, '0');
+  return jsonpGet('jpKline', KLINE_TIMEOUT,
+    cbName => host + '/api/qt/stock/kline/get?' +
+      'secid=' + encodeURIComponent(secid) +
+      '&klt=101&fqt=0&beg=' + begStr + '&end=20500101&lmt=120' +
+      '&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55' +
+      '&cb=' + cbName + '&_=' + Date.now(),
+    data => {
       const ks = data && data.data && Array.isArray(data.data.klines) ? data.data.klines : null;
-      if (!ks || !ks.length) { reject(new Error('empty')); return; }
+      if (!ks || !ks.length) { throw new Error('empty'); }
       const bars = [];
       ks.forEach(line => {
         const p = String(line).split(',');
@@ -2142,26 +2045,12 @@ function jsonpKlineHost(secid, host) {
         if (!Number.isFinite(o) || !Number.isFinite(c) || !Number.isFinite(hi) || !Number.isFinite(lo) || !(c > 0)) return;
         bars.push({ date: p[0], open: o, close: c, high: hi, low: lo });
       });
-      if (!bars.length) { reject(new Error('badbars')); return; }
-      resolve(bars);
-    };
-    script.onerror = () => { cleanup(); reject(new Error('network')); };
-    const beg = new Date(Date.now() - KLINE_BACK_DAYS * 86400000);
-    const begStr = beg.getFullYear() + String(beg.getMonth() + 1).padStart(2, '0') + String(beg.getDate()).padStart(2, '0');
-    script.src = host + '/api/qt/stock/kline/get?' +
-      'secid=' + encodeURIComponent(secid) +
-      '&klt=101&fqt=0&beg=' + begStr + '&end=20500101&lmt=120' +
-      '&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55' +
-      '&cb=' + cbName + '&_=' + Date.now();
-    document.head.appendChild(script);
-  });
+      if (!bars.length) { throw new Error('badbars'); }
+      return bars;
+    });
 }
-async function jsonpKline(secid) {
-  let err = null;
-  for (const host of KLINE_HOSTS) {
-    try { return await jsonpKlineHost(secid, host); } catch (e) { err = e; }
-  }
-  throw err || new Error('kline-failed');
+function jsonpKline(secid) {
+  return fetchWithHostRetry(KLINE_HOSTS, host => jsonpKlineHost(secid, host));
 }
 function klineCached(code) {
   const c = klineStore()[code];
@@ -2197,18 +2086,15 @@ function windowBars(h) {
 }
 async function lazyLoadKlines(force, silent) {
   const hs = klineTargets();
-  const btn = el('btnKlineRefresh');
   if (!hs.length) {
-    if (el('klineList')) el('klineList').innerHTML = '<div class="empty">暂无场内持仓，可在「当前持仓」新增 <b>ETF/股票</b> 后查看K线。</div>';
+    if (el('klineList')) el('klineList').innerHTML = KLINE_EMPTY_HTML;
     if (el('klineSrcNote')) el('klineSrcNote').textContent = '';
     return;
   }
   renderKlines();
   const need = force ? hs : hs.filter(h => !klineCached(h.code));
   if (!need.length) return;
-  if (btn) { btn.disabled = true; btn.textContent = '刷新中…'; }
   const results = await Promise.all(need.map(h => fetchKlineOne(h.code)));
-  if (btn) { btn.disabled = false; btn.textContent = '全部刷新'; }
   renderKlines();
   if (silent) return;
   const ok = results.filter(Boolean).length;
@@ -2229,7 +2115,7 @@ function renderKlines() {
   if (!list) return;
   const hs = klineTargets();
   if (!hs.length) {
-    list.innerHTML = '<div class="empty">暂无场内持仓，可在「当前持仓」新增 <b>ETF/股票</b> 后查看K线。</div>';
+    list.innerHTML = KLINE_EMPTY_HTML;
     if (nav) nav.innerHTML = '';
     el('klineSrcNote').textContent = '';
     return;
@@ -2341,15 +2227,7 @@ function klineSVG(h, view, txs, lastBuy, cp) {
   let svg = '';
 
   /* 蜡烛 */
-  for (let i = 0; i < n; i++) {
-    const b = view[i];
-    const up = b.close >= b.open;
-    const col = up ? '#f44336' : '#4caf50';
-    const x = barX(i);
-    const bw = Math.max(step * 0.62, PU(1.8));
-    svg += '<line x1="' + x.toFixed(1) + '" y1="' + Y(b.high).toFixed(1) + '" x2="' + x.toFixed(1) + '" y2="' + Y(b.low).toFixed(1) + '" stroke="' + col + '" stroke-width="' + PU(1) + '"/>';
-    svg += '<rect x="' + (x - bw / 2).toFixed(1) + '" y="' + Math.min(Y(b.open), Y(b.close)).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(Math.abs(Y(b.close) - Y(b.open)), 1).toFixed(1) + '" fill="' + col + '"/>';
-  }
+  svg += klineCandlesSVG(view, step, padL, Y, PU);
 
   /* 网格线（配置%）+ 最近买入价基准线 */
   if (lastBuy != null && lastBuy > 0) {
@@ -2409,6 +2287,19 @@ function klineSVG(h, view, txs, lastBuy, cp) {
   /* 首末日期 */
   svg += '<text x="' + padL + '" y="' + (H - PU(2)) + '" font-size="' + PU(8) + '" fill="#9aa3ae">' + esc(shortDate(view[0].date)) + '</text>';
   svg += '<text x="' + (W - padR) + '" y="' + (H - PU(2)) + '" text-anchor="end" font-size="' + PU(8) + '" fill="#9aa3ae">' + esc(shortDate(view[view.length - 1].date)) + '</text>';
+  return svg;
+}
+function klineCandlesSVG(view, step, padL, Y, PU) {
+  let svg = '';
+  for (let i = 0; i < view.length; i++) {
+    const b = view[i];
+    const up = b.close >= b.open;
+    const col = up ? '#f44336' : '#4caf50';
+    const x = padL + step * (i + 0.5);
+    const bw = Math.max(step * 0.62, PU(1.8));
+    svg += '<line x1="' + x.toFixed(1) + '" y1="' + Y(b.high).toFixed(1) + '" x2="' + x.toFixed(1) + '" y2="' + Y(b.low).toFixed(1) + '" stroke="' + col + '" stroke-width="' + PU(1) + '"/>';
+    svg += '<rect x="' + (x - bw / 2).toFixed(1) + '" y="' + Math.min(Y(b.open), Y(b.close)).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(Math.abs(Y(b.close) - Y(b.open)), 1).toFixed(1) + '" fill="' + col + '"/>';
+  }
   return svg;
 }
 const KLINE_MIN_BARS = 3;
@@ -3270,7 +3161,7 @@ function tickHtml(val, bar) {
   h += '<i class="tb-cur" style="left:' + pos(val).toFixed(2) + '%"></i></div>';
   return h;
 }
-function pctBarHtml(val, bar, digits) {
+function pctBarHtml(val, bar) {
   if (!bar) return '';
   if (bar.slim) return tickHtml(val, bar);
   const span = bar.max - bar.min;
@@ -3322,7 +3213,7 @@ function indCardHtml(o, val, dateStr, opts) {
   }
   if (tip || stale) h += '<div class="ind-tip">' + esc(tip) + extraCls + '</div>';
   else h += '<div class="ind-tip"></div>';
-  h += pctBarHtml(has ? val : NaN, o.bar, o.digits);
+  h += pctBarHtml(has ? val : NaN, o.bar);
   h += indRefHtml(o, snap);
   h += '<div class="ind-sub">' + esc(dateStr || '') + (o.approx ? ' · 近似口径' : '') + '</div>';
   return h + '</div>';
@@ -3613,7 +3504,6 @@ function bindEvents() {
     };
   });
 
-  el('btnKlineRefresh').onclick = () => lazyLoadKlines(true);
   el('klineNav').addEventListener('click', e => {
     const chip = e.target.closest('[data-sel]');
     if (!chip) return;
@@ -3635,69 +3525,20 @@ function bindEvents() {
     const cfg = e.target.closest('[data-act="grid"]');
     if (cfg) openGridModal(cfg.dataset.id);
   });
-  document.addEventListener('keydown', e => {
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-    const kview = el('view-kline');
-    if (!kview || !kview.classList.contains('active')) return;
-    const tag = document.activeElement && document.activeElement.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-    if (document.querySelector('.overlay')) return;
-    const hs = klineTargets();
-    const sel = klineSelOf(hs);
-    if (sel == null) return;
-    const ns = sel + (e.key === 'ArrowRight' ? 1 : -1);
-    if (ns < 0 || ns >= hs.length) return;
-    e.preventDefault();
-    klineSelId = hs[ns].id;
-    renderKlines();
-  });
-
-  el('monitorList').addEventListener('click', e => {
-    const btn = e.target.closest('[data-act="refreshMon"]');
-    if (!btn) return;
-    refreshMonitor(btn.dataset.code, btn);
-  });
-  el('btnMonRefreshAll').onclick = async function () {
-    for (const code of Object.keys(MONITOR_CONFIGS)) {
-      await refreshMonitor(code, null);
-    }
-  };
-
-  el('holdingList').addEventListener('click', e => {
-    const th = e.target.closest('.hold-table th[data-sort], .hold-head [data-sort]');
-    if (th) {
-      const key = th.dataset.sort;
-      if (holdSort.key !== key) holdSort = { key, dir: 1 };
-      else if (holdSort.dir === 1) holdSort.dir = -1;
-      else holdSort = { key: null, dir: 1 };
-      renderHoldings();
-      return;
-    }
-    const btn = e.target.closest('[data-act]');
-    if (!btn) return;
-    const card = e.target.closest('.hold-row, .hold-table tr[data-id], .hold-fund-row, .hold-mobile-fund');
-    if (!card) return;
-    openTradeOrAction(card.dataset.id, btn.dataset.act);
-  });
-
-  el('txBody').addEventListener('click', e => {
-    const del = e.target.closest('[data-del]');
-    if (del) deleteTx(del.dataset.del);
-    const edit = e.target.closest('[data-edit]');
-    if (edit) openEditTxModal(edit.dataset.edit);
-  });
+  bindKlineKeys();
+  bindMonitorActions();
+  bindHoldingsClick();
+  bindTxClick();
 
   initDragSort();
   initTouchDragSort();
   initChipDragSort();
   if (mqMobile.addEventListener) mqMobile.addEventListener('change', renderAll);
-  else if (mqMobile.addListener) mqMobile.addListener(renderAll);
 
-  el('btnRefresh').onclick = openRefreshModal;
   el('btnNewHolding').onclick = openNewHoldingModal;
-  el('btnQuote').onclick = () => { fetchQuotes(false); fetchMacro(true); lazyLoadKlines(true); };
+  el('btnQuote').onclick = () => { fetchQuotes(false); fetchMacro(false); lazyLoadKlines(true); };
   const qSel = el('quoteAuto');
-  if (state && state.settings) qSel.value = String(state.settings.quoteAutoSec);
+  syncQuoteSel();
   qSel.onchange = e => {
     state.settings.quoteAutoSec = Number(e.target.value) || 0;
     save();
@@ -3736,7 +3577,60 @@ function bindEvents() {
   };
   el('txFilter').onchange = e => { txFilterCode = e.target.value; renderTransactions(); };
 }
-
+function bindKlineKeys() {
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const kview = el('view-kline');
+    if (!kview || !kview.classList.contains('active')) return;
+    const tag = document.activeElement && document.activeElement.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (document.querySelector('.overlay')) return;
+    const hs = klineTargets();
+    const sel = klineSelOf(hs);
+    if (sel == null) return;
+    const ns = sel + (e.key === 'ArrowRight' ? 1 : -1);
+    if (ns < 0 || ns >= hs.length) return;
+    e.preventDefault();
+    klineSelId = hs[ns].id;
+    renderKlines();
+  });
+}
+function bindMonitorActions() {
+  el('monitorList').addEventListener('click', e => {
+    const btn = e.target.closest('[data-act="refreshMon"]');
+    if (!btn) return;
+    refreshMonitor(btn.dataset.code, btn);
+  });
+  el('btnMonRefreshAll').onclick = () => {
+    Promise.all(Object.keys(MONITOR_CONFIGS).map(code => refreshMonitor(code, null)));
+  };
+}
+function bindHoldingsClick() {
+  el('holdingList').addEventListener('click', e => {
+    const th = e.target.closest('.hold-table th[data-sort], .hold-head [data-sort]');
+    if (th) {
+      const key = th.dataset.sort;
+      if (holdSort.key !== key) holdSort = { key, dir: 1 };
+      else if (holdSort.dir === 1) holdSort.dir = -1;
+      else holdSort = { key: null, dir: 1 };
+      renderHoldings();
+      return;
+    }
+    const btn = e.target.closest('[data-act]');
+    if (!btn) return;
+    const card = e.target.closest('.hold-row, .hold-table tr[data-id], .hold-fund-row, .hold-mobile-fund');
+    if (!card) return;
+    openTradeOrAction(card.dataset.id, btn.dataset.act);
+  });
+}
+function bindTxClick() {
+  el('txBody').addEventListener('click', e => {
+    const del = e.target.closest('[data-del]');
+    if (del) deleteTx(del.dataset.del);
+    const edit = e.target.closest('[data-edit]');
+    if (edit) openEditTxModal(edit.dataset.edit);
+  });
+}
 function openTradeOrAction(id, act) {
   const h = getHolding(id);
   if (!h) return;
@@ -3763,15 +3657,18 @@ function showCorruptDialogIfAny() {
   });
   ov.querySelector('[data-ok]').onclick = ov.close;
 }
+function bootRefresh() {
+  setQuoteTimer();
+  fetchQuotes(true);
+  fetchMacro(true);
+  if (el('view-kline').classList.contains('active')) lazyLoadKlines(false);
+}
 function localBoot() {
   state = loadState();
   save();
   syncQuoteSel();
   renderAll();
-  setQuoteTimer();
-  fetchQuotes(true);
-  fetchMacro(true);
-  if (el('view-kline').classList.contains('active')) lazyLoadKlines(false);
+  bootRefresh();
   showCorruptDialogIfAny();
 }
 async function startCloudSession() {
@@ -3814,10 +3711,7 @@ async function startCloudSession() {
       renderAll();
       if (syncMeta.dirty) flushCloudPush();
     }
-    setQuoteTimer();
-    fetchQuotes(true);
-    fetchMacro(true);
-    if (el('view-kline').classList.contains('active')) lazyLoadKlines(false);
+    bootRefresh();
     showCorruptDialogIfAny();
   } catch (e) {
     sessionReady = true;
@@ -3825,10 +3719,7 @@ async function startCloudSession() {
     state = loadState();
     syncQuoteSel();
     renderAll();
-    setQuoteTimer();
-    fetchQuotes(true);
-    fetchMacro(true);
-    if (el('view-kline').classList.contains('active')) lazyLoadKlines(false);
+    bootRefresh();
     setSyncDot('err', '云端暂不可达，当前使用本地缓存');
     toast('云端暂不可达，当前使用本地缓存');
     showCorruptDialogIfAny();
@@ -3877,7 +3768,7 @@ initMkBubbleDelegation();
 })();
 
 if (window.addEventListener) window.addEventListener('online', () => { if (syncMeta.dirty) flushCloudPush(); });
-document.addEventListener('visibilitychange', () => { if (!document.hidden && typeof pullIfNewer === 'function') pullIfNewer(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) pullIfNewer(); });
 </script>
 </body>
 </html>
