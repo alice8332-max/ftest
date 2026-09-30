@@ -297,12 +297,11 @@ body{
 .kli-navchip.dragging{opacity:.4}
 .kli-navchip.drop-hint{background:var(--accent);color:#fff}
 .kline-stage{position:relative}
-.kline-hero-wrap{position:relative}
-.kli-hero{max-width:none;flex:1 1 100%}
-.kline-hero-wrap>.kline-arrow{position:absolute;top:50%;transform:translateY(-50%);z-index:5;width:36px;height:36px;font-size:22px;line-height:34px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer;box-shadow:0 2px 6px rgba(16,24,40,.12);padding:0}
+.kline-hero-wrap{position:relative;display:flex;align-items:center;justify-content:center;gap:10px}
+.kli-hero{max-width:none;flex:1 1 auto;min-width:0}
+.kline-hero-wrap>.kline-arrow{flex:none;position:static;z-index:5;width:36px;height:36px;font-size:22px;line-height:34px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer;box-shadow:0 2px 6px rgba(16,24,40,.12);padding:0}
 .kline-hero-wrap>.kline-arrow:hover{color:var(--accent);border-color:var(--accent)}
-.kline-arrow.prev{left:6px}
-.kline-arrow.next{right:6px}
+.kline-hero-wrap>.kline-arrow.off{visibility:hidden;pointer-events:none}
 .kline-card{
   flex:1 1 360px;min-width:340px;max-width:560px;
   background:var(--card);border:1px solid var(--line);border-radius:10px;
@@ -505,7 +504,7 @@ body{
   .mac-row{font-size:9.5px}
   .kline-nav{gap:5px;padding-bottom:6px}
   .kli-navchip{font-size:11.5px;padding:4px 10px}
-  .kline-hero-wrap>.kline-arrow{width:30px;height:30px;font-size:18px;line-height:28px}
+  .kline-hero-wrap>.kline-arrow{display:none}
 }
 </style>
 </head>
@@ -1806,11 +1805,17 @@ function setQuoteTimer() {
   }
 }
 
-/* ========================= 宏观指标条（v0.18.0）==========================
+/* ========================= 宏观指标条（v0.18.0 / v0.20.0 资金流改实时）==========
    位置：summary 与 tabs 之间，全 Tab 显示
    卡片：上证指数 / 成交总额(沪深两市) / 两市主力净流入 / 纳斯达克综指 / 布油UKOIL / 黄金9999
-   数据源=东财 ulist 实时行情(JSONP) + push2his 日K(昨日两市成交额 f57) + push2his 资金流(f52 主力净流入)
+   数据源(v0.20.0)=东财 ulist 实时行情(JSONP)：f2 现价/f3 涨跌幅/f6 成交额/f62 主力净流入(当日实时)
+                + push2his 日K(昨日两市成交额 f57)
+   注(v0.20.0)：资金净流入原取自 push2his 资金流日K(f52)，该接口盘中不更新当日、
+     最后一根 K 线仍是昨日，导致盘中显示昨日收盘定格值（2026-09-30 盘中显示 +65.2亿，
+     实际当日为 -109.0亿）。现改用 ulist 的 f62 实时字段，并与 f6 成交额交叉校验（净占比自洽）。
    存储=invMacro_v1 本地缓存（纯行情数据，不入云端 settings）；红涨绿跌沿用 A 股口径
+   护栏：f62 天然可负，不能套用 macroYuan 的 >0 过滤；两市均为 0（盘前/缺值）时回退缓存，
+     不显示 0.0亿；缓存日期≠今天时六张卡 meta 追加「· 缓存」标记。
 */
 const MACRO_CACHE_KEY = 'invMacro_v1';
 const MACRO_IDS = [
@@ -1843,6 +1848,11 @@ function macroYuan(x) {
   const y = Number(x);
   return Number.isFinite(y) && y > 0 ? y : 0;
 }
+function macroFlow(x) {
+  if (x == null) return null;
+  const y = Number(x);
+  return Number.isFinite(y) ? y : null;
+}
 function fmtYi(y, dec) {
   const v = y / 1e8;
   return (dec === 1) ? v.toFixed(1) : Math.round(v);
@@ -1872,28 +1882,12 @@ function jsonpKlineAmtHost(host, secid) {
 function jsonpKlineAmt(secid) {
   return fetchWithHostRetry(KLINE_HOSTS, host => jsonpKlineAmtHost(host, secid));
 }
-function jsonpFflowHost(host, secid) {
-  return jsonpGet('jpFl', KLINE_TIMEOUT,
-    cbName => host + '/api/qt/stock/fflow/daykline/get?lmt=2&klt=101' +
-      '&secid=' + encodeURIComponent(secid) +
-      '&fields1=f1,f2,f3,f7&fields2=f51,f52&cb=' + cbName + '&_=' + Date.now(),
-    data => {
-      const ks = data && data.data && Array.isArray(data.data.klines) ? data.data.klines : null;
-      if (!ks || !ks.length) { throw new Error('empty'); }
-      const last = String(ks[ks.length - 1]).split(',');
-      const v = Number(last[1]);
-      return Number.isFinite(v) ? v : 0;
-    });
-}
-function jsonpFflow(secid) {
-  return fetchWithHostRetry(KLINE_HOSTS, host => jsonpFflowHost(host, secid));
-}
 async function fetchMacro(silent) {
   if (macroBusy) return;
   macroBusy = true;
   let m = null;
   try {
-    const diff = await jsonpQuote('1.000001,0.399001,100.NDX,112.B00Y,118.AU9999', 'f12,f13,f14,f2,f3,f4,f6');
+    const diff = await jsonpQuote('1.000001,0.399106,100.NDX,112.B00Y,118.AU9999', 'f12,f13,f14,f2,f3,f4,f6,f62');
     const by = {};
     diff.forEach(q => { by[(q.f13 != null ? q.f13 + '.' : '') + q.f12] = q; });
     const prev = macroStore();
@@ -1902,10 +1896,15 @@ async function fetchMacro(silent) {
       const itm = pickMacro(by[it.secid]);
       m[it.key] = itm || (prev && prev[it.key]) || null;
     });
-    m.turnoverToday = macroYuan(by['1.000001'] && by['1.000001'].f6) + macroYuan(by['0.399001'] && by['0.399001'].f6);
+    const shQ = by['1.000001'];
+    const szQ = by['0.399106'] || by['0.399001'];
+    m.turnoverToday = macroYuan(shQ && shQ.f6) + macroYuan(szQ && szQ.f6);
     if (!(m.turnoverToday > 0) && prev && prev.turnoverToday > 0) m.turnoverToday = prev.turnoverToday;
     m.turnoverYest = prev && Number.isFinite(prev.turnoverYest) ? prev.turnoverYest : null;
-    m.flow = prev && Number.isFinite(prev.flow) ? prev.flow : null;
+    const fSH = macroFlow(shQ && shQ.f62);
+    const fSZ = macroFlow(szQ && szQ.f62);
+    const liveFlow = (fSH != null && fSH !== 0) || (fSZ != null && fSZ !== 0);
+    m.flow = liveFlow ? ((fSH || 0) + (fSZ || 0)) : (prev && Number.isFinite(prev.flow) ? prev.flow : null);
     saveMacroStore(m);
     renderMacroBar();
   } catch (e) {
@@ -1919,10 +1918,7 @@ async function fetchMacro(silent) {
   return m;
 }
 async function fillMacroSlow(m, silent) {
-  const [amts, fl] = await Promise.all([
-    Promise.allSettled([jsonpKlineAmt('1.000001'), jsonpKlineAmt('0.399001')]),
-    Promise.allSettled([jsonpFflow('1.000001'), jsonpFflow('0.399001')])
-  ]);
+  const amts = await Promise.allSettled([jsonpKlineAmt('1.000001'), jsonpKlineAmt('0.399106')]);
   let got = false;
   const a0 = amts[0].status === 'fulfilled' ? amts[0].value : null;
   const a1 = amts[1].status === 'fulfilled' ? amts[1].value : null;
@@ -1930,9 +1926,6 @@ async function fillMacroSlow(m, silent) {
     const ysum = (a0 && a0.yest || 0) + (a1 && a1.yest || 0);
     if (ysum > 0) { m.turnoverYest = ysum; got = true; }
   }
-  const f0 = fl[0].status === 'fulfilled' ? fl[0].value : null;
-  const f1 = fl[1].status === 'fulfilled' ? fl[1].value : null;
-  if (f0 != null || f1 != null) { m.flow = (f0 || 0) + (f1 || 0); got = true; }
   saveMacroStore(m);
   renderMacroBar();
   if (got && !silent) toast('宏观行情已更新');
@@ -1959,29 +1952,39 @@ function renderMacroBar() {
   if (!bar) return;
   const m = macroStore();
   const t = macTime(m && m.at);
+  const stale = !!(m && m.date && m.date !== today());
+  const tail = stale ? ' · 缓存' : '';
   const cards = [];
   if (m && m.at) {
-    cards.push(macIndexCard('上证指数', 'SH 000001 · ' + t, m.sh));
+    cards.push(macIndexCard('上证指数', 'SH 000001 · ' + t + tail, m.sh));
     const turn = m.turnoverToday > 0 ? fmtYi(m.turnoverToday, 0) + '亿' : '--';
     let delta = null;
     if (m.turnoverToday > 0 && m.turnoverYest > 0) delta = m.turnoverToday - m.turnoverYest;
     const deltaTxt = delta == null ? '--' : ((delta >= 0 ? '放量 +' : '缩量 ') + fmtYi(delta, 0) + '亿');
     cards.push('<div class="mac-card">' +
       '<div class="mac-name">成交总额</div>' +
-      '<div class="mac-meta">沪深两市 · ' + t + '</div>' +
+      '<div class="mac-meta">沪深两市 · ' + t + tail + '</div>' +
       '<div class="mac-val">' + turn + '</div>' +
       '<div class="mac-row"><span class="' + (delta != null ? cls(delta) : '') + '">' + deltaTxt + '</span></div>' +
     '</div>');
-    const flowTxt = m.flow != null && Number.isFinite(m.flow) ? ((m.flow >= 0 ? '+' : '') + fmtYi(m.flow, 1) + '亿') : '--';
+    const flowOk = m.flow != null && Number.isFinite(m.flow);
+    const flowTxt = flowOk ? ((m.flow >= 0 ? '+' : '') + fmtYi(m.flow, 1) + '亿') : '--';
+    let flowPct = null;
+    if (flowOk && m.turnoverToday > 0 && m.flow !== 0) {
+      flowPct = (m.flow / m.turnoverToday * 100);
+      if (Number.isFinite(flowPct) && flowPct !== 0) flowPct = (flowPct > 0 ? '+' : '') + flowPct.toFixed(2) + '%';
+      else flowPct = '';
+    }
     cards.push('<div class="mac-card">' +
       '<div class="mac-name">资金净流入</div>' +
-      '<div class="mac-meta">沪深两市主力 · ' + t + '</div>' +
+      '<div class="mac-meta">沪深两市主力 · ' + t + tail + '</div>' +
       '<div class="mac-val">' + flowTxt + '</div>' +
-      '<div class="mac-row"><span class="' + (Number.isFinite(m.flow) ? cls(m.flow) : '') + '">' + (Number.isFinite(m.flow) ? (m.flow >= 0 ? '净流入' : '净流出') : '') + '</span></div>' +
+      '<div class="mac-row"><span class="' + (flowOk ? cls(m.flow) : '') + '">' +
+      (flowOk ? (m.flow >= 0 ? '净流入' : '净流出') : '') + (flowPct ? ' · ' + flowPct : '') + '</span></div>' +
     '</div>');
-    cards.push(macIndexCard('纳斯达克', 'IXIC · ' + t, m.ndx));
-    cards.push(macIndexCard('布油 UKOIL', 'Brent 当月 · ' + t, m.ou));
-    cards.push(macIndexCard('黄金9999', 'SGE AU9999 · ' + t, m.au));
+    cards.push(macIndexCard('纳斯达克', 'IXIC · ' + t + tail, m.ndx));
+    cards.push(macIndexCard('布油 UKOIL', 'Brent 当月 · ' + t + tail, m.ou));
+    cards.push(macIndexCard('黄金9999', 'SGE AU9999 · ' + t + tail, m.au));
   } else {
     for (let i = 0; i < 6; i++) {
       cards.push('<div class="mac-card"><div class="mac-name">--</div><div class="mac-meta">加载中…</div>' +
@@ -2129,8 +2132,8 @@ function renderKlines() {
       '<button class="kli-navchip' + (i === sel ? ' active' : '') + '" data-sel="' + x.id + '">' + esc(x.name) + '</button>'
     ).join('');
   }
-  const prevBtn = sel > 0 ? '<button class="kline-arrow prev" data-step="-1" title="上一个标的">‹</button>' : '';
-  const nextBtn = sel < hs.length - 1 ? '<button class="kline-arrow next" data-step="1" title="下一个标的">›</button>' : '';
+  const prevBtn = '<button class="kline-arrow prev' + (sel > 0 ? '' : ' off') + '" data-step="-1" title="上一个标的">‹</button>';
+  const nextBtn = '<button class="kline-arrow next' + (sel < hs.length - 1 ? '' : ' off') + '" data-step="1" title="下一个标的">›</button>';
   const cardHTML = klineCardHTML(hs[sel]).replace('kline-card', 'kline-card kli-hero');
   list.innerHTML = '<div class="kline-hero-wrap">' + prevBtn + cardHTML + nextBtn + '</div>';
   const card = list.querySelector('.kli-hero');
