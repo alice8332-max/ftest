@@ -247,8 +247,15 @@ body{
   font-size:13px;color:var(--muted);
 }
 .alloc-summary b{font-size:13.5px}
-.alloc-main{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:20px;align-items:start;margin-bottom:16px}
-.alloc-lcol{min-width:0}
+/* v0.21.1：用 grid-template-areas 显式定区域，使 DOM 顺序与两种断点下的视觉顺序解耦。
+   桌面：环图/列表在左列，明细面板跨两行贴右（sticky）；手机：环图 → 面板 → 列表。 */
+.alloc-main{
+  display:grid;gap:20px 24px;align-items:start;margin-bottom:16px;
+  grid-template-columns:minmax(0,1fr) 380px;
+  grid-template-areas:"ring detail" "list detail";
+}
+.alloc-ringwrap{grid-area:ring;min-width:0}
+.alloc-lgwrap{grid-area:list;min-width:0}
 .alloc-ringwrap{position:relative;display:flex;justify-content:center;padding:4px 0 10px}
 .alloc-ring{width:100%;max-width:340px;height:auto;display:block;overflow:visible}
 .alloc-ring text{font-family:inherit;pointer-events:none;user-select:none}
@@ -264,7 +271,6 @@ body{
 .alloc-mk.dim{opacity:.2;transform:scale(.96)}
 .alloc-lbl{transition:opacity .16s ease;pointer-events:none}
 .alloc-lbl-name text{font-weight:600;paint-order:stroke;stroke:rgba(0,0,0,.18);stroke-width:.6px}
-.alloc-lbl-pct text{font-weight:500;opacity:.88}
 .alloc-lbl.dim{opacity:.2}
 .alloc-lbl.sel text{font-weight:700}
 .alloc-tip{
@@ -277,22 +283,26 @@ body{
 .alloc-tip .r{display:flex;justify-content:space-between;gap:14px}
 .alloc-tip .r span:first-child{color:var(--muted)}
 .alloc-tip .n{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
-.alloc-legend{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:6px}
+/* 环下「目标 vs 实际」对比列表（v0.21.1）：单列每行一标的，两个数字定宽右对齐跨行对齐 */
+.alloc-legend{display:flex;flex-direction:column;gap:6px}
 .alloc-lg{
-  display:flex;align-items:center;gap:7px;text-align:left;cursor:pointer;
+  display:grid;grid-template-columns:10px minmax(0,1fr) 84px 84px;align-items:center;gap:10px;
+  text-align:left;cursor:pointer;
   border:1px solid var(--line);background:var(--card);border-radius:8px;
-  padding:6px 9px;font-size:12.5px;color:var(--text);min-width:0;font-family:inherit;
+  padding:8px 12px;font-size:13px;color:var(--text);font-family:inherit;
+  transition:border-color .16s ease,background .16s ease;
 }
 .alloc-lg:hover{border-color:var(--accent)}
-.alloc-lg.sel{border-color:var(--accent);background:#f4f7ff}
-.alloc-lg.over{border-color:#e6c9bd;background:#fdf8f5}
+.alloc-lg.sel{border-color:var(--accent);background:#f4f7ff;box-shadow:0 0 0 2px rgba(47,111,237,.16)}
 .alloc-lg i{width:10px;height:10px;border-radius:3px;flex:none}
-.alloc-lg .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.alloc-lg .pc{font-size:12px;font-weight:700;flex:none}
-.alloc-lg.over .pc{color:var(--warn)}
+.alloc-lg .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.alloc-lg .tgt,.alloc-lg .act{text-align:right;white-space:nowrap;font-size:12.5px}
+.alloc-lg .tgt{color:var(--muted)}
+.alloc-lg .act{font-weight:700}
 .alloc-hint{margin-top:10px;font-size:11.5px;color:var(--muted);line-height:1.7;text-align:center}
 /* 明细面板：三段分区，语义隔离（见方案 §3.4） */
 .alloc-dpanel{
+  grid-area:detail;
   background:var(--card);border:1px solid var(--line);border-radius:10px;
   box-shadow:0 1px 3px rgba(16,24,40,.05);overflow:hidden;position:sticky;top:12px;
 }
@@ -328,38 +338,9 @@ body{
 .alloc-dbody.over{background:#fdf8f5;border-radius:6px}
 .alloc-dbody.over .alloc-drow:last-child .v{color:var(--warn)}
 .alloc-dfoot{padding:8px 12px;font-size:11px;color:var(--muted);line-height:1.6;border-top:1px solid var(--line);background:var(--card2)}
-.alloc-listhead{
-  display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
-  font-size:12.5px;color:var(--muted);margin-bottom:8px;
-}
-.alloc-listhead .muted{font-size:11.5px}
-.alloc-list{display:flex;flex-direction:column;gap:10px}
-.alloc-row{
-  background:var(--card);border:1px solid var(--line);border-radius:10px;
-  padding:12px 16px;display:flex;gap:18px;align-items:center;flex-wrap:wrap;
-  box-shadow:0 1px 3px rgba(16,24,40,.05);cursor:pointer;
-  transition:border-color .16s ease,box-shadow .16s ease;
-}
-.alloc-row:hover{border-color:var(--accent)}
-.alloc-row.over{background:#fdf3f0;border-color:#f0cfc3}
-.alloc-row.sel{border-color:var(--accent);box-shadow:0 0 0 2px rgba(47,111,237,.16),0 1px 3px rgba(16,24,40,.05)}
-.alloc-row.sel.over{border-color:var(--accent);background:#fdf8f5}
-.alloc-name{width:230px;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;flex-wrap:wrap}
-.alloc-name .dot{width:10px;height:10px;border-radius:3px;flex:none}
-.alloc-bars{flex:1;min-width:300px;display:flex;flex-direction:column;gap:5px}
-.alloc-line{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted)}
-.alloc-line .lbl{width:96px;text-align:right;white-space:nowrap}
-.abar{position:relative;flex:1;height:11px;background:#eef0f4;border-radius:6px;overflow:hidden}
-.abar-t{position:absolute;left:0;top:0;bottom:0;opacity:.4;border-radius:6px}
-.abar-a{position:absolute;left:0;top:0;bottom:0;border-radius:6px}
-.alloc-nums{width:250px;font-size:13px;text-align:right}
 .tag-out{
   font-size:11px;color:var(--muted);border:1px solid var(--line);
   background:var(--card2);border-radius:4px;padding:1px 6px;font-weight:400;
-}
-.tag-warn{
-  font-size:11px;color:var(--warn);border:1px solid rgba(245,124,0,.45);
-  background:rgba(245,124,0,.06);border-radius:4px;padding:1px 6px;font-weight:400;
 }
 /* 总市值为 0 时的降级：只列目标配置 */
 .alloc-onlyw{display:flex;flex-direction:column;gap:8px}
@@ -573,15 +554,12 @@ body{
   .tx-table th:nth-child(8),.tx-table td:nth-child(8),
   .tx-table th:nth-child(9),.tx-table td:nth-child(9){display:none}
   .tx-table th,.tx-table td{padding:8px 4px}
-  .alloc-main{grid-template-columns:1fr;gap:14px}
+  /* v0.21.1：手机端顺序 环图 → 明细面板 → 列表 → hint
+     面板排在列表上方，点列表行后往上看一屏就是明细，无需 scrollIntoView 跳转 */
+  .alloc-main{grid-template-columns:1fr;gap:14px;grid-template-areas:"ring" "detail" "list"}
   .alloc-dpanel{position:static}
   .alloc-ring{max-width:320px}
-  .alloc-legend{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .alloc-row{flex-direction:column;align-items:stretch;gap:10px}
-  .alloc-name{width:100%;min-width:0}
-  .alloc-bars{width:100%;min-width:0}
-  .alloc-nums{width:100%;text-align:left}
-  .alloc-line .lbl{width:auto;text-align:left}
+  .alloc-lg{grid-template-columns:10px minmax(0,1fr) 72px 72px;gap:8px;padding:8px 10px}
   .modal-head{padding:12px 14px}
   .modal-body{padding:14px}
   .modal-foot{padding:10px 14px calc(10px + env(safe-area-inset-bottom))}
@@ -2928,9 +2906,13 @@ const ALLOC_COLORS = ['#2563eb', '#0d9488', '#7c3aed', '#059669', '#475569', '#e
 const ALLOC_OTHER_COLOR = '#94a3b8';
 const ALLOC_OTHER_KEY = '__other__';
 const ALLOC_MIN_SWEEP = 1.2;   /* 0 角度扇区的最小可见角宽(度)；外环 r=90 时约 1.9px，保证已清仓标的点得到 */
-const ALLOC_LABEL_PCT = 4;     /* 市值占比 ≥ 4% 才在环上画名称；1~4% 只画整数占比；<1% 进「其他」 */
 const ALLOC_MERGE_PCT = 1;     /* w=0 且 市值占比 < 1% 合并进「其他 N 只」 */
-const ALLOC_MAX_NAME_ROWS = 8; /* 超过 8 个环上扇区则一律不画名称（颜色不可区分 + 扇区过窄） */
+/* 环上标签（v0.21.1）：只画名称，弧长放得下才画。
+   注意 font-size 与扇区同为 viewBox 单位，会等比缩放（340px/200 = 1.7×），
+   因此必须用「弧长 ≥ 字宽」判断而非屏幕像素思维 —— 这样缩放系数自动约掉。 */
+const ALLOC_LBL_FS = 6.4;      /* 标签字号(viewBox 单位)；340px 宽时 = 6.4×1.7 ≈ 10.9px 实际 */
+const ALLOC_LBL_R = 81;        /* 标签基线半径 = 外环带正中 (72+90)/2 */
+const ALLOC_LBL_PAD = 1.18;    /* 弧长/字宽 安全系数，留 18% 余量 */
 let allocSelId = null;         /* 选中态：内存变量，不入 state/localStorage —— 不点击就不显示明细 */
 
 function allocRows(plan, totalMV) {
@@ -3016,7 +2998,20 @@ function allocMarkerPath(cx, cy, r, deg) {
     'L' + (bx - px * 3.6).toFixed(2) + ' ' + (by - py * 3.6).toFixed(2) +
     'L' + (bx + px * 3.6).toFixed(2) + ' ' + (by + py * 3.6).toFixed(2) + 'Z';
 }
-/* 环上径向标签：rotate(θ−90) 使文字基线沿半径向外；左右半区翻转避免倒置 */
+/* 估算文字宽度（viewBox 单位）。与扇区同尺度，故与缩放系数无关。
+   em 宽按字形分类：CJK/全角 1.0，数字 0.56，大写字母 0.62，其余（空格、连字符等）0.5 */
+function allocTextW(txt, fs) {
+  let em = 0;
+  for (const ch of String(txt)) {
+    const c = ch.codePointAt(0);
+    if (c > 0x2e80) em += 1.0;
+    else if (c >= 48 && c <= 57) em += 0.56;
+    else if (c >= 65 && c <= 90) em += 0.62;
+    else em += 0.5;
+  }
+  return em * fs;
+}
+/* 环上径向标签：rotate(θ) 配左右半区翻转，使文字读向始终朝外、不倒置 */
 function allocLabel(deg, r, txt, fs, clsName) {
   /* deg = 0 位于 12 点方向。文字先按 deg 随半径旋转，再翻转 180° 使读向始终朝外；
      需翻转两次才能覆盖 270°~360° 区间（单次 -180 会落到 (90,180] 仍然倒置） */
@@ -3029,7 +3024,6 @@ function allocLabel(deg, r, txt, fs, clsName) {
 }
 function allocRingSVG(A, sel) {
   const ring = allocRingRows(A.rows);
-  const showName = ring.length <= ALLOC_MAX_NAME_ROWS;
   const p = [];
   let wi = -90, wo = -90;
   ring.forEach(r => {
@@ -3057,12 +3051,16 @@ function allocRingSVG(A, sel) {
         allocArcPath(100, 100, 64, 48, wi, wi + wDeg) + '" fill="' + r.color + '" fill-opacity="0.32"' +
         (isSel ? ' stroke="#0f172a" stroke-opacity=".85" stroke-width="2.4"' : '') + '/>');
     }
-    /* 环上标签：只标外环（内环不重复）；≥4% 名称+整数占比，1~4% 只画占比 */
-    if (r.a >= ALLOC_LABEL_PCT && showName) {
-      p.push(allocLabel(wo + aDeg / 2, 82, r.name, 9, 'alloc-lbl-name' + c));
-      p.push(allocLabel(wo + aDeg / 2, 76, Math.round(r.a) + '%', 8.5, 'alloc-lbl-pct' + c));
-    } else if (r.a >= ALLOC_MERGE_PCT) {
-      p.push(allocLabel(wo + aDeg / 2, 79, Math.round(r.a) + '%', 8.5, 'alloc-lbl-pct' + c));
+    /* 环上标签：只画名称（v0.21.1 移除占比标签）。
+       弧长准入 = 硬保证不叠：标签只在自己那个扇区的弧长内绘制，而扇区互不重叠，
+       故相邻标签切向重叠在数学上不可能发生。放不下的留白，名称一定在环下列表里读得到。 */
+    if (aDeg > 0) {
+      const arc = aDeg / 360 * 2 * Math.PI * ALLOC_LBL_R;
+      /* 单扇区 100% 时「扇区中点」在 3 点钟方向会竖排，改为固定 12 点横排 */
+      const lblDeg = ring.length === 1 ? 0 : wo + aDeg / 2;
+      if (arc >= allocTextW(r.name, ALLOC_LBL_FS) * ALLOC_LBL_PAD) {
+        p.push(allocLabel(lblDeg, ALLOC_LBL_R, r.name, ALLOC_LBL_FS, 'alloc-lbl-name' + c));
+      }
     }
     /* 超阈值标记：环外侧三角（不用红色——红色在本应用是"上涨"语义，3/5 扇区标红会误读） */
     if (r.over && aDeg > 0) {
@@ -3081,15 +3079,19 @@ function allocRingSVG(A, sel) {
   return '<svg class="alloc-ring" viewBox="0 0 200 200" role="img" aria-label="资产配置双环偏差图">' +
     p.join('') + center + '</svg>';
 }
+/* 环下「目标 vs 实际」对比列表（v0.21.1）：色块 + 名称 + 目标% + 实际%
+   渲染 A.rows 全明细（含被合并进「其他 N 只」的 <1% 计划外个股），避免这些个股在界面上
+   彻底消失 —— 合并块只留在环上，点该扇区仍可看其合计明细。零信息损失。
+   排序沿用 A.rows（= 环上顺序 w↓ → a↓ → code↑），顺时针读环时可逐行对上。 */
 function allocLegendHTML(A, sel) {
-  const ring = allocRingRows(A.rows);
-  return '<div class="alloc-legend">' + ring.map(r => {
+  return '<div class="alloc-legend">' + A.rows.map(r => {
     const isSel = sel != null && r.key === String(sel);
-    return '<button class="alloc-lg' + (isSel ? ' sel' : '') + (r.over ? ' over' : '') +
-      '" data-k="' + esc(r.key) + '" type="button">' +
+    return '<button class="alloc-lg' + (isSel ? ' sel' : '') + '" data-k="' + esc(r.key) +
+      '" type="button">' +
       '<i style="background:' + r.color + '"></i>' +
       '<span class="nm">' + esc(r.name) + '</span>' +
-      '<span class="pc num">' + Math.round(r.a) + '%</span></button>';
+      '<span class="tgt num">目标 ' + r.w.toFixed(1) + '%</span>' +
+      '<span class="act num">实际 ' + r.a.toFixed(1) + '%</span></button>';
   }).join('') + '</div>';
 }
 function allocSecRow(t) { return '<div class="alloc-dsec">' + t + '</div>'; }
@@ -3099,7 +3101,7 @@ function allocDr(lbl, val, vcls) {
 }
 function allocDetailHTML(A, row) {
   if (!row) {
-    return '<div class="alloc-dph"><div class="ico">◔</div><div>点击左侧任一扇区<br>或下方列表行<br>查看标的明细</div></div>';
+    return '<div class="alloc-dph"><div class="ico">◔</div><div>点击环上任一扇区<br>或下方列表行<br>查看标的明细</div></div>';
   }
   if (row.merged) {
     const n = row.members.length;
@@ -3176,28 +3178,6 @@ function renderAlloc() {
     return;
   }
   const row = sel ? A.rows.find(r => r.key === sel) : null;
-  const listSorted = A.rows.slice().sort((x, y) => Math.abs(y.dev) - Math.abs(x.dev));
-  const scaleMax = Math.max.apply(null, listSorted.map(r => Math.max(r.w, r.a)).concat([40])) * 1.08;
-  const listHtml = listSorted.map(r => {
-    const isSel = r.key === sel;
-    const actTxt = r.over ? (r.dev > 0 ? '减仓约 ¥' : '补仓约 ¥') + fmtMoney(Math.abs(r.devValue)) : '';
-    return '<div class="alloc-row' + (r.over ? ' over' : '') + (isSel ? ' sel' : '') +
-      '" data-h="' + esc(r.key) + '" role="button" tabindex="0">' +
-      '<div class="alloc-name"><i class="dot" style="background:' + r.color + '"></i>' +
-      '<span class="code num">' + esc(r.code) + '</span><span>' + esc(r.name) + '</span>' +
-      (r.cleared ? '<span class="badge-cleared">已清仓</span>' : '') +
-      (r.w <= 0 ? '<span class="tag-out">计划外</span>' : '') +
-      (r.over ? '<span class="tag-warn">' + (r.dev > 0 ? '减仓' : '补仓') + '</span>' : '') + '</div>' +
-      '<div class="alloc-bars">' +
-      '<div class="alloc-line"><span class="lbl">目标 ' + r.w.toFixed(1) + '%</span><div class="abar"><div class="abar-t" style="width:' +
-      (r.w / scaleMax * 100).toFixed(2) + '%;background:' + r.color + '"></div></div></div>' +
-      '<div class="alloc-line"><span class="lbl">市值 ' + r.a.toFixed(1) + '%</span><div class="abar"><div class="abar-a" style="width:' +
-      (r.a / scaleMax * 100).toFixed(2) + '%;background:' + r.color + '"></div></div></div>' +
-      '</div>' +
-      '<div class="alloc-nums num">偏离 <span class="' + cls(r.dev) + '">' +
-      (r.dev > 0 ? '+' : '') + r.dev.toFixed(1) + 'pp</span>' + (actTxt ? ' · ' + actTxt : '') + '</div>' +
-      '</div>';
-  }).join('');
   box.innerHTML =
     '<div class="alloc-summary">' +
     '<span>期末目标 <b class="num" style="color:var(--text)">' +
@@ -3205,22 +3185,20 @@ function renderAlloc() {
     '<span>时间进度 <b style="color:var(--text)">' + (timeProgress(plan) * 100).toFixed(0) + '%</b></span>' +
     '<span>总市值 <b class="num" style="color:var(--text)">¥' + fmtMoney(totalMV) + '</b></span>' +
     '<span>超阈值 <b style="color:var(--text)">' + A.overCount + '</b> 只（阈值 ±' + A.thr + 'pp）</span>' +
+    /* 权重非 100% 属功能性告警（v0.21.0 原在底部列表头，v0.21.1 随该块删除后并入此处） */
+    (A.sumWErr > 0.5
+      ? '<span class="tag-out">⚠ 计划权重合计 ' + A.sumW.toFixed(2) + '%，非 100%</span>'
+      : '') +
     '<span class="muted">内环＝目标配置（期末） · 外环＝当前市值占比</span>' +
     '</div>' +
     '<div class="alloc-main">' +
-    '<div class="alloc-lcol">' +
     '<div class="alloc-ringwrap">' + allocRingSVG(A, sel) + '<div id="allocTip" class="alloc-tip" hidden></div></div>' +
-    allocLegendHTML(A, sel) +
-    '<div class="alloc-hint">▶ 标记 = 超阈值（|偏离| &gt; ' + A.thr + 'pp）· 扇区越长占比越高 · 点扇区或图例看明细</div>' +
-    '</div>' +
     '<div class="alloc-dpanel" id="allocDetail">' + allocDetailHTML(A, row) + '</div>' +
+    '<div class="alloc-lgwrap">' + allocLegendHTML(A, sel) +
+    '<div class="alloc-hint">▶ = 超阈值（|偏离| &gt; ' + A.thr +
+    'pp）· 扇区越长占比越高 · 点扇区或下方列表行看明细</div>' +
     '</div>' +
-    '<div class="alloc-listhead">偏离明细 · 按 |偏离| 降序 · 点击行联动高亮环上扇区' +
-    (A.sumWErr > 0.5
-      ? '<span class="tag-out">⚠ 计划权重合计 ' + A.sumW.toFixed(2) + '%，非 100%，合计偏差不为 0 属预期</span>'
-      : '<span class="muted">合计超/欠配 ¥' + fmtMoney(A.sumDevValue) + '（恒为 0.00，可作自检）</span>') +
-    '</div>' +
-    '<div class="alloc-list">' + listHtml + '</div>';
+    '</div>';
 }
 /* ===================== 定投参考（v0.9.0 · V4里程碑） =====================
    配置驱动声明式规则引擎：新增标的只需扩展 MONITOR_CONFIGS + Edge Function 注册表
@@ -4017,12 +3995,6 @@ function bindAllocClick() {
   function select(k) {
     allocSelId = (k != null && String(k) === String(allocSelId)) ? null : (k == null ? null : String(k));
     renderAlloc();
-    if (allocSelId != null) {
-      const p = el('allocDetail');
-      if (p && mqMobile.matches && p.scrollIntoView) p.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      const row = box.querySelector('.alloc-row.sel');
-      if (row && row.scrollIntoView) row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
   }
   box.addEventListener('click', e => {
     const x = e.target.closest('.alloc-dhead .x[data-act="clear"]');
@@ -4031,17 +4003,11 @@ function bindAllocClick() {
     if (sec) { select(sec.dataset.k); return; }
     const lg = e.target.closest('.alloc-lg[data-k]');
     if (lg) { select(lg.dataset.k); return; }
-    const row = e.target.closest('.alloc-row[data-h]');
-    if (row) { select(row.dataset.h); return; }
     if (e.target.closest('.alloc-ringwrap')) { select(null); return; }
   });
-  box.addEventListener('keydown', e => {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    const row = e.target.closest('.alloc-row[data-h]');
-    if (!row) return;
-    e.preventDefault();
-    select(row.dataset.h);
-  });
+  /* v0.21.1：不再做任何 scrollIntoView 跳转（明细面板在手机上已排在列表上方）。
+     keydown 委托也一并删除 —— 列表是原生 <button type="button">，Enter/Space 由浏览器
+     自动派发 click，键盘可达性由平台保证。 */
   /* 桌面端悬停 tooltip：一次只挂一个监听，renderAlloc 后自动失效 */
   box.addEventListener('mouseover', e => {
     if (mqMobile.matches) return;
