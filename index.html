@@ -244,9 +244,14 @@ body{
 .dca-col:hover{opacity:.82}
 /* ---------- 资产配置（v0.22.0）：小环 + 明细表 ---------- */
 .alloc-main{display:flex;align-items:flex-start;gap:22px;flex-wrap:wrap}
-.alloc-ringwrap{flex:0 0 auto;width:200px;display:flex;justify-content:center;padding:4px 0}
+.alloc-ringwrap{flex:0 0 auto;width:200px;display:flex;flex-direction:column;align-items:center;gap:6px;padding:4px 0}
+.alloc-ringtitle{font-size:12.5px;font-weight:600;color:var(--muted);letter-spacing:.02em}
 .alloc-ring{width:100%;max-width:200px;height:auto;display:block;overflow:visible}
 .alloc-ring text{font-family:inherit;pointer-events:none;user-select:none}
+/* 扇区可点：hover 轻微提亮 + title 提示可点，selected 由内联 fill-opacity 控制 */
+.alloc-sec{transition:fill-opacity .12s,opacity .12s}
+.alloc-sec:hover{filter:brightness(1.12)}
+.alloc-ring{cursor:default}
 .alloc-scroll{flex:1 1 420px;min-width:0;overflow-x:auto;-webkit-overflow-scrolling:touch}
 .alloc-tbl{width:100%;border-collapse:collapse;font-size:13px}
 .alloc-tbl th,.alloc-tbl td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
@@ -258,6 +263,13 @@ body{
 .alloc-tbl .c-name .badge-cleared{margin-left:6px}
 .alloc-tbl td.num{font-variant-numeric:tabular-nums}
 .alloc-tbl td.ov{color:var(--warn);font-weight:700}
+/* 选中行：底色 + 左侧色条（色条颜色由内联 box-shadow 注入，与环上扇区同色）。
+   未选中行降到 0.45 让「点谁谁突出」更明确。 */
+.alloc-tbl tbody .alloc-row{cursor:pointer;transition:background .12s,opacity .12s}
+.alloc-tbl tbody .alloc-row:hover{background:var(--hover,rgba(37,99,235,.06))}
+.alloc-tbl tbody .alloc-row:focus{outline:2px solid var(--brand,#2563eb);outline-offset:-2px}
+.alloc-tbl.has-sel tbody .alloc-row{opacity:.45}
+.alloc-tbl.has-sel tbody .alloc-row.on{opacity:1;background:var(--hover,rgba(37,99,235,.10));font-weight:600}
 #toast{
   position:fixed;left:50%;bottom:36px;transform:translateX(-50%);
   background:#333a48;color:#fff;padding:9px 20px;border-radius:8px;
@@ -2647,10 +2659,17 @@ function openEditFundModal(id) {
    卡片墙 → 单张 SVG 柱状图。每根柱占一个 x 槽位，槽内上下堆叠：成本从 0 向上，
    盈利段接在成本柱顶端（柱顶=市值），亏损段从 0 向下、与成本柱分离。
    期末目标（黑粗线）与按时间进度应投（橙线）作为标尺横穿全图。
-   全部量程由数据推导、零硬编码；正负两侧共用同一套「向上取整到整齐刻度」规则，
-   负区间高度下限 25%，避免亏损被压成一条看不见的线。
-   只画场内标的，顺序沿用 sortedHoldings() 的 order 拖拽序；计划外 w=0 保留一列
-   但不画标尺线（缺线本身就是「不在计划内」的信号）。
+   上下双带、各自独立刻度（v0.22.1 修复「盈亏柱恒为一点点」）：
+     上带「成本·目标」= 成本柱 + 期末目标黑线 + 按进度应投橙线，量程 max(成本, 目标, 应投)；
+     下带「盈亏」= 红/绿盈亏柱，量程 max|盈亏|，以带内中线为 0。
+   为什么必须分带：单轴线性堆叠在数学上无法让盈亏可读——盈亏只有成本的 10% 时，
+   柱高就必然只有 10%（计划外标的比例常低到 1%，实测仅 0.7px，等于没画）。
+   且「期末目标」天然远高于当前市值，若让它进主量程，成本柱本身也会被压扁
+   （实测 目标 30 万 / 市值 22 万 ⇒ 成本柱从 182px 掉到 67px）。
+   分带后两把尺子各自贴在带标签上，不共用刻度，不产生「谁更高」的误读。
+   全部量程由数据推导、零硬编码；两带都只画场内标的，顺序沿用 sortedHoldings()
+   的 order 拖拽序；计划外 w=0 保留一列且**照常画盈亏柱**，只是不画标尺线
+   （缺线本身就是「不在计划内」的信号）。
    数据全部取自现有对象（shares/avgCost/posPL/plan.weights），零新增请求、零结构变更。
    方案见 0930_03_修改方案_定投进度与资产配置双Tab重构v0.22.0.md §2.2 / §3.2
    ======================================================================== */
@@ -2662,8 +2681,8 @@ const DCA_PAD_L = 92;     /* 左侧刻度留白：够放 "−¥10,000" */
 const DCA_PAD_R = 24;
 const DCA_PAD_T = 30;
 const DCA_PAD_B = 88;     /* 底部 4 行文字(名称/盈亏/收益率/超配成本) */
-const DCA_NEG_MIN = 0.25; /* 负区间占图高下限：亏损不能被压扁 */
-const DCA_NEG_MAX = 0.50;
+const DCA_COST_BAND = 0.48; /* 上带「成本·目标」占绘图区高度比例；剩下给盈亏带 */
+const DCA_BAND_GAP = 20;    /* 两带之间的空隙：够放「盈亏」带标签，不与刻度打架 */
 const DCA_EPS = 0.005;    /* 金额判定容差，与旧卡片一致 */
 
 /* 向上取整到 1/2/2.5/5/10 × 10^n 的整齐刻度；v<=0 兜底为 1 */
@@ -2713,57 +2732,70 @@ function dcaChartSVG(rows) {
   const barW = Math.min(DCA_BAR_MAX, colW * 0.46);
   const x0 = DCA_PAD_L, x1 = W - DCA_PAD_R;
 
-  /* ---- 量程：正侧含黑线（目标线必须落在轴内），负侧不压缩 ---- */
-  let upMax = 0, dnMax = 0;
+  /* ---- 双带几何：上带成本·目标，下带盈亏，两把尺子互不干扰 ---- */
+  const costBandH = plotH * DCA_COST_BAND;
+  const costTop = plotTop, costBot = plotTop + costBandH;
+  const plTop = costBot + DCA_BAND_GAP, plBot = plotBot;
+  const plBandH = plBot - plTop;
+  const plZeroY = plTop + plBandH / 2;
+
+  /* 上带量程：成本与目标必须同尺，否则「离目标还差多少」没法目测 */
+  let costMax = 0, plMax = 0;
   rows.forEach(x => {
-    upMax = Math.max(upMax, x.cost + Math.max(x.pl, 0), x.targetAbs, x.should);
-    if (x.pl < 0) dnMax = Math.max(dnMax, -x.pl);
+    costMax = Math.max(costMax, x.cost, x.targetAbs, x.should);
+    plMax = Math.max(plMax, Math.abs(x.pl));
   });
-  upMax = upMax > 0 ? upMax : 1;
-  const posStep = dcaNiceStep(upMax / 4);
-  const posK = Math.floor(upMax / posStep);
-  /* DN_MAX=0 也要留出负区间，否则盈亏轴左右不对称 */
-  const negStep = dcaNiceStep(dnMax / 2);
-  const negDivs = Math.max(1, Math.ceil(dnMax / negStep - 1e-9));
-  const negSpan = negStep * negDivs;
-  const negFrac = Math.min(DCA_NEG_MAX, Math.max(DCA_NEG_MIN, negSpan > 0 ? dnMax / negSpan : 0));
-  const negH = plotH * negFrac, posH = plotH - negH, zeroY = plotTop + posH;
-  const ypos = v => zeroY - (v / upMax) * posH;
-  /* yneg 统一约定：只接受「正的数量级」。曾写成 zeroY + (-v/span)*h，
-     符号反向会把负侧网格线全画到零轴上方（0930_03 §0.1 bug#1），此处以注释固化。 */
-  const yneg = mag => zeroY + (mag / negSpan) * negH;
+  costMax = costMax > 0 ? costMax : 1;
+  plMax = plMax > 0 ? plMax : 1;
+  /* 刻度都向上取整到整齐值：costStep 保证最外侧线在带内，plStep 同理。
+     盈亏带用 /3 而不是 /2：niceStep 会向上取整得比较粗（30000/2=15000→20000，
+     量程虚涨到 40000，白浪费 25% 带高），/3 能让最大盈亏基本顶满带高。 */
+  const costStep = dcaNiceStep(costMax / 3);
+  const costDivs = Math.max(1, Math.ceil(costMax / costStep - 1e-9));
+  const costSpan = costStep * costDivs;
+  const plStep = dcaNiceStep(plMax / 3);
+  const plDivs = Math.max(1, Math.ceil(plMax / plStep - 1e-9));
+  const plSpan = plStep * plDivs;
+
+  const yCost = v => costBot - (v / costSpan) * costBandH;
+  const yPl = v => plZeroY - (v / plSpan) * (plBandH / 2);
 
   const s = [];
   s.push('<svg class="dca-svg" xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + DCA_H +
     '" viewBox="0 0 ' + W + ' ' + DCA_H + '" role="img" aria-label="定投进度柱状图">' +
     '<rect x="0" y="0" width="' + W + '" height="' + DCA_H + '" fill="var(--card)"/>');
 
-  /* 网格线：正负两侧同色同规则，0 轴单独用深色加粗 */
+  /* 网格线 + 左侧金额标签，两带各一套 */
   const gl = yy => '<line x1="' + x0 + '" y1="' + yy.toFixed(1) + '" x2="' + x1 +
     '" y2="' + yy.toFixed(1) + '" stroke="var(--line)" stroke-width="1"/>';
   const al = (v, yy) => '<text x="' + (x0 - 8) + '" y="' + (yy + 3.5).toFixed(1) +
     '" text-anchor="end" font-size="10.5" fill="var(--muted)">' + dcaTick(v) + '</text>';
-  for (let i = 1; i <= posK; i++) { const yy = ypos(posStep * i); if (yy > plotTop + 1) s.push(gl(yy)); }
-  for (let i = 1; i <= negDivs; i++) {
-    /* 守卫用 <= ：最外侧线按构造正好落在 plotBot 上，正是需要的那条，不能裁掉 */
-    const yy = yneg(negStep * i);
-    if (yy <= plotBot + 1) s.push(gl(yy));
+  for (let i = 1; i <= costDivs; i++) { const yy = yCost(costStep * i); if (yy >= costTop - 1) s.push(gl(yy)); }
+  for (let i = 1; i <= plDivs; i++) {
+    const v = plStep * i;
+    for (const sg of [1, -1]) { const yy = yPl(sg * v); if (yy >= plTop - 1 && yy <= plBot + 1) s.push(gl(yy)); }
   }
-  s.push('<line x1="' + x0 + '" y1="' + zeroY.toFixed(1) + '" x2="' + x1 + '" y2="' + zeroY.toFixed(1) +
+  /* 两带的 0 轴都单独加粗：上带底沿 = 成本 0，下带中线 = 盈亏 0 */
+  s.push('<line x1="' + x0 + '" y1="' + costBot.toFixed(1) + '" x2="' + x1 + '" y2="' + costBot.toFixed(1) +
     '" stroke="var(--text)" stroke-width="1.6"/>');
-  for (let i = 1; i <= posK; i++) { const yy = ypos(posStep * i); if (yy > plotTop + 1) s.push(al(posStep * i, yy)); }
-  for (let i = 1; i <= negDivs; i++) {
-    const yy = yneg(negStep * i);
-    if (yy <= plotBot + 1) s.push(al(-negStep * i, yy));
+  s.push('<line x1="' + x0 + '" y1="' + plZeroY.toFixed(1) + '" x2="' + x1 + '" y2="' + plZeroY.toFixed(1) +
+    '" stroke="var(--text)" stroke-width="1.6"/>');
+  for (let i = 1; i <= costDivs; i++) { const yy = yCost(costStep * i); if (yy >= costTop - 1) s.push(al(costStep * i, yy)); }
+  for (let i = 1; i <= plDivs; i++) {
+    const v = plStep * i;
+    for (const sg of [1, -1]) { const yy = yPl(sg * v); if (yy >= plTop - 1 && yy <= plBot + 1) s.push(al(sg * v, yy)); }
   }
-  s.push(al(0, zeroY) + al(upMax, plotTop));
+  s.push(al(costSpan, costTop) + al(0, costBot) + al(plSpan, plTop) + al(0, plZeroY));
+  /* 带标签：两把尺子不是同一把，必须写明，否则会被读成同一量程 */
+  const bandLbl = (t, yy) => '<text x="' + (x0 - 8) + '" y="' + (yy - 5).toFixed(1) +
+    '" text-anchor="end" font-size="9.5" font-weight="700" fill="var(--muted)">' + t + '</text>';
+  s.push(bandLbl('成本·目标', costTop + 9) + bandLbl('盈亏', plTop - 5));
 
   /* ---- 柱体 + 标尺线 + 轴下文字 ---- */
   const TXT = 'font-size="10.5" text-anchor="middle"';
   rows.forEach((x, i) => {
     const cx = x0 + colW * (i + 0.5);
     const bx = cx - barW / 2;
-    const top = x.cost + x.pl;
     s.push('<g class="dca-col">');
     s.push('<title>' + esc(x.name + (x.code ? '（' + x.code + '）' : '') +
       '　成本 ¥' + fmtMoney(x.cost) + '　市值 ¥' + fmtMoney(x.mv) +
@@ -2772,20 +2804,24 @@ function dcaChartSVG(rows) {
       '　' + (x.hasPlan ? '期末目标 ¥' + fmtMoney(x.targetAbs) + '　按进度应投 ¥' + fmtMoney(x.should) : '未纳入定投计划')) +
       '</title>');
     if (x.cost > 0) {
-      const h = ypos(0) - ypos(x.cost);
-      s.push('<rect x="' + bx.toFixed(1) + '" y="' + ypos(x.cost).toFixed(1) + '" width="' + barW.toFixed(1) +
+      const h = costBot - yCost(x.cost);
+      s.push('<rect x="' + bx.toFixed(1) + '" y="' + yCost(x.cost).toFixed(1) + '" width="' + barW.toFixed(1) +
         '" height="' + Math.max(0, h).toFixed(1) + '" fill="var(--dca-cost)" rx="2"/>');
     }
-    if (x.pl > DCA_EPS && top > x.cost) {
-      s.push('<rect x="' + bx.toFixed(1) + '" y="' + ypos(top).toFixed(1) + '" width="' + barW.toFixed(1) +
-        '" height="' + Math.max(0, ypos(x.cost) - ypos(top)).toFixed(1) + '" fill="var(--up)" rx="2"/>');
+    /* 盈亏柱在下带，量程独立：计划外标的（w=0）也照常画，
+       不再因为「目标远高于市值」而被压成 0.7px 的 invisible sliver */
+    if (x.pl > DCA_EPS) {
+      const h = plZeroY - yPl(x.pl);
+      s.push('<rect x="' + bx.toFixed(1) + '" y="' + yPl(x.pl).toFixed(1) + '" width="' + barW.toFixed(1) +
+        '" height="' + Math.max(0, h).toFixed(1) + '" fill="var(--up)" rx="2"/>');
     } else if (x.pl < -DCA_EPS) {
-      s.push('<rect x="' + bx.toFixed(1) + '" y="' + zeroY.toFixed(1) + '" width="' + barW.toFixed(1) +
-        '" height="' + Math.max(0, yneg(-x.pl) - zeroY).toFixed(1) + '" fill="var(--down)" rx="2"/>');
+      const h = yPl(x.pl) - plZeroY;
+      s.push('<rect x="' + bx.toFixed(1) + '" y="' + plZeroY.toFixed(1) + '" width="' + barW.toFixed(1) +
+        '" height="' + Math.max(0, h).toFixed(1) + '" fill="var(--down)" rx="2"/>');
     }
     if (x.hasPlan) {
       const h1 = barW / 2 + 8;
-      const yt = ypos(x.targetAbs), ys = ypos(x.should);
+      const yt = yCost(x.targetAbs), ys = yCost(x.should);
       s.push('<line x1="' + (cx - h1).toFixed(1) + '" y1="' + yt.toFixed(1) + '" x2="' + (cx + h1).toFixed(1) +
         '" y2="' + yt.toFixed(1) + '" stroke="var(--text)" stroke-width="2.4"/>');
       s.push('<line x1="' + (cx - h1).toFixed(1) + '" y1="' + ys.toFixed(1) + '" x2="' + (cx + h1).toFixed(1) +
@@ -3021,43 +3057,75 @@ function allocArcPath(cx, cy, rOut, rIn, a0, a1) {
     'L' + p3[0].toFixed(2) + ' ' + p3[1].toFixed(2) +
     'A' + rIn + ' ' + rIn + ' 0 ' + la + ' 0 ' + p4[0].toFixed(2) + ' ' + p4[1].toFixed(2) + 'Z';
 }
-function allocRingSVG(A) {
+function allocRingSVG(A, selId) {
   const rows = A.rows;
   const p = [];
   /* 外环：a=100% 时圆弧起点终点重合会让 path 退化为零面积，必须改画 <circle> 描边环。
-     0 角度扇区（已清仓但仍有市值极小）给一个最小可见角宽。 */
+     0 角度扇区（已清仓但仍有市值极小）给一个最小可见角宽。
+     v0.22.1：扇区带 data-k 可点；选中项满不透明 + 加白色内描边，其余降到 0.28
+     ——「点谁谁突出」，同时保留整体环的上下文。 */
   let acc = 0;
   rows.forEach(r => {
+    const on = selId && r.key === selId;
+    const dim = selId && !on;
+    const op = on ? 1 : dim ? 0.28 : 0.88;
+    const stroke = on ? ' stroke="var(--card)" stroke-width="1.5"' : '';
     let aDeg = r.a / 100 * 360;
     if (aDeg > 0 && aDeg < ALLOC_MIN_SWEEP) aDeg = ALLOC_MIN_SWEEP;
     if (aDeg >= 359.999) {
+      /* a=100% 走描边环：白描边会被 18px 色描边整个盖住（重复的 stroke 属性在
+         HTML 解析里也会被丢弃），所以选中时先垫一圈更粗的白色描边当光晕。
+         光晕不参与命中测试，否则会挡住下面带 data-k 的色环。 */
+      if (on) {
+        p.push('<circle cx="100" cy="100" r="81" fill="none" stroke="var(--card)"' +
+          ' stroke-width="20.5" style="pointer-events:none"/>');
+      }
       p.push('<circle cx="100" cy="100" r="81" fill="none" stroke="' +
-        r.color + '" stroke-width="18"/>');
+        r.color + '" stroke-width="18" data-k="' + esc(r.key) + '" class="alloc-sec' +
+        (on ? ' on' : '') + '" style="cursor:pointer;opacity:' + op + '"/>');
     } else {
       p.push('<path d="' + allocArcPath(100, 100, 90, 72, acc, acc + aDeg) +
-        '" fill="' + r.color + '" fill-opacity="0.88"/>');
+        '" fill="' + r.color + '" fill-opacity="' + op + '" data-k="' + esc(r.key) +
+        '" class="alloc-sec' + (on ? ' on' : '') + '" style="cursor:pointer"' + stroke + '/>');
     }
     acc += aDeg;
   });
+  /* 环心：总市值（整数、无 ¥，与表格三列口径一致）+ 一行小字说明这是什么数 */
   const center = A.totalMV > 0
-    ? '<text x="100" y="96" text-anchor="middle" font-size="13" font-weight="700" fill="var(--text)">¥' +
-      esc(fmtMoney(A.totalMV).replace(/\.\d\d$/, '')) + '</text>'
+    ? '<text x="100" y="94" text-anchor="middle" font-size="15" font-weight="700" fill="var(--text)">' +
+      esc(allocNum(A.totalMV)) + '</text>' +
+      '<text x="100" y="110" text-anchor="middle" font-size="9" fill="var(--muted)">总市值</text>'
     : '';
-  return '<svg class="alloc-ring" viewBox="0 0 200 200" role="img" aria-label="资产配置占比环图">' +
+  return '<svg class="alloc-ring" viewBox="0 0 200 200" role="img" aria-label="市值分布环图">' +
     p.join('') + center + '</svg>';
+}
+/* 金额显示：v0.22.1 起「当前市值 / 超配市值 / 超配成本」三列去掉 ¥ 前缀与小数字。
+   同一列里数字位数一多，¥ 和小数点会挤在一起把列撑宽、也读不出量级。
+   单位靠表头与全局语境（应用内金额一律人民币），不再逐格重复。 */
+function allocNum(v) {
+  return (Number(v) || 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 });
+}
+function allocSign(v) {
+  const x = Number(v) || 0;
+  return (x > 0 ? '+' : x < 0 ? '-' : '') + allocNum(Math.abs(x));
 }
 /* 标的明细表（v0.22.0）：6 列 = 标的 / 市值占比 / 偏离 / 当前市值 / 超配市值 / 超配成本。
    行色块与环上扇区同色，环与表在同一视觉轴上（环在左、表在右），一一对应。
    超阈值行的超配市值与超配成本转琥珀橙加粗（--warn）：本应用红色是"上涨"语义，
-   超配不是"涨"，用红色会被误读为利好。 */
-function allocTableHTML(A) {
+   超配不是"涨"，用红色会被误读为利好。
+   v0.22.1：环与表双向联动 —— 点扇区高亮对应行，点行高亮对应扇区。
+   选中态只存内存变量 allocSelId，不落 localStorage（避免下次进来还残留高亮）。 */
+function allocTableHTML(A, selId) {
   const cell = (v, over) => '<td class="num' + (over ? ' ov' : '') + '">' + v + '</td>';
-  return '<div class="alloc-scroll"><table class="alloc-tbl"><thead><tr>' +
+  return '<div class="alloc-scroll"><table class="alloc-tbl' + (selId ? ' has-sel' : '') + '"><thead><tr>' +
     '<th class="c-name">标的</th><th>市值占比</th><th>偏离</th><th>当前市值</th>' +
     '<th>超配市值</th><th>超配成本</th>' +
     '</tr></thead><tbody>' +
-    A.rows.map(r =>
-      '<tr>' +
+    A.rows.map(r => {
+      const on = selId && r.key === selId;
+      return '<tr class="alloc-row' + (on ? ' on' : '') + '" data-k="' + esc(r.key) + '"' +
+        ' tabindex="0" role="button" aria-pressed="' + (on ? 'true' : 'false') + '"' +
+        (on ? ' style="box-shadow:inset 3px 0 0 ' + r.color + '"' : '') + '>' +
       '<td class="c-name"><i style="background:' + r.color + '"></i>' +
         '<span class="nm" title="' + esc(r.name + (r.code ? '（' + r.code + '）' : '')) + '">' + esc(r.name) + '</span>' +
         (r.cleared ? '<span class="badge-cleared">已清仓</span>' : '') +
@@ -3065,11 +3133,13 @@ function allocTableHTML(A) {
         (r.outside ? '<span class="tag-out">计划外</span>' : '') +
       '</td>' +
       cell(r.a.toFixed(2) + '%', false) +
-      cell((r.dev > 0 ? '+' : '') + r.dev.toFixed(2) + 'pp', r.over) +
-      cell('¥' + fmtMoney(r.mv), false) +
-      cell('¥' + fmtSigned(r.devValue), r.over) +
-      cell('¥' + fmtSigned(r.overCost), r.over) +
-      '</tr>').join('') +
+      /* 偏离用 % 而不是 BP/pp：用户要的是"占比差多少个百分点"，BP 是术语不是人话 */
+      cell(allocSign(r.dev) + '%', r.over) +
+      cell(allocNum(r.mv), false) +
+      cell(allocSign(r.devValue), r.over) +
+      cell(allocSign(r.overCost), r.over) +
+      '</tr>';
+    }).join('') +
     '</tbody></table></div>';
 }
 function renderAlloc() {
@@ -3092,9 +3162,51 @@ function renderAlloc() {
   }
   box.innerHTML =
     '<div class="alloc-main">' +
-    '<div class="alloc-ringwrap">' + allocRingSVG(A) + '</div>' +
-    allocTableHTML(A) +
+    '<div class="alloc-ringwrap">' +
+      '<div class="alloc-ringtitle">市值分布</div>' + allocRingSVG(A, allocSelId) +
+    '</div>' +
+    allocTableHTML(A, allocSelId) +
     '</div>';
+  bindAllocClick(box);
+}
+/* v0.22.1 环↔表联动：事件委托挂在容器上一次绑定（innerHTML 重绘不重复挂）。
+   点扇区 → 高亮对应行；点行 → 高亮对应扇区；再点同项或点空白 → 取消。
+   选中态只在内存里（allocSelId），切 tab / 重渲染后由 renderAlloc 重新对齐，
+   不写 localStorage —— 免得下次进来还残留一个高亮，用户以为是默认状态。 */
+let allocSelId = '';
+function bindAllocClick(box) {
+  if (!box || box._allocBound) return;
+  box._allocBound = true;
+  box.addEventListener('click', e => {
+    const t = e.target.closest ? e.target.closest('[data-k]') : null;
+    if (t && box.contains(t)) {
+      const k = t.getAttribute('data-k');
+      allocSelId = (allocSelId === k) ? '' : k;
+    } else {
+      allocSelId = '';
+    }
+    renderAlloc();
+  });
+  /* 行是 <tr role="button">，键盘要能和鼠标等价 */
+  box.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+    const t = e.target.closest ? e.target.closest('.alloc-row[data-k]') : null;
+    if (!t || !box.contains(t)) return;
+    e.preventDefault();
+    const k = t.getAttribute('data-k');
+    allocSelId = (allocSelId === k) ? '' : k;
+    renderAlloc();
+    const again = el('allocContent');
+    if (again) {
+      /* 不用 querySelector 拼选择器：标的 id 里出现 \ ] 引号等字符会让选择器
+         语法报错，把异常抛在 keydown 里。改成逐行比对 getAttribute。 */
+      let row = null;
+      for (const el2 of again.querySelectorAll('.alloc-row[data-k]')) {
+        if (el2.getAttribute('data-k') === allocSelId) { row = el2; break; }
+      }
+      if (row && row.focus) row.focus();
+    }
+  });
 }
 /* ===================== 定投参考（v0.9.0 · V4里程碑） =====================
    配置驱动声明式规则引擎：新增标的只需扩展 MONITOR_CONFIGS + Edge Function 注册表
