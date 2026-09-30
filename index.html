@@ -16,6 +16,7 @@
   --down:#4caf50;
   --accent:#2f6fed;
   --warn:#f57c00;
+--dca-cost:#8fa3bf;   /* 定投进度图：成本段（中性蓝灰，区别于盈亏红绿） */
   /* 定投参考档位色（独立命名空间，不与行情涨跌语义混用） */
   --lv-green:#2e7d32;   /* 2X */
   --lv-lgreen:#558b2f;  /* 1.5X */
@@ -224,134 +225,39 @@ body{
   font-size:13px;
 }
 .ph-total{font-size:14px;font-weight:700}
-.plan-cards{display:flex;flex-wrap:wrap;gap:12px}
-.plan-card{
-  flex:1 1 190px;min-width:190px;max-width:300px;
-  background:var(--card);border:1px solid var(--line);border-radius:10px;
-  padding:12px 14px;box-shadow:0 1px 3px rgba(16,24,40,.05);
+/* 定投进度柱状图（v0.22.0）：卡片墙 → 单张 SVG，手机端横向滚动 */
+.dca-legend{
+  display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;
+  margin:0 0 8px;font-size:11.5px;color:var(--muted);
 }
-.pc-head{display:flex;align-items:center;gap:8px;font-size:16px;font-weight:600;margin-bottom:8px}
-.pc-pl{font-size:16px;font-weight:700;margin-bottom:6px;min-height:24px}
-.pc-gap{font-size:13px;font-weight:600;margin-bottom:2px;min-height:18px}
-.pc-gap.lag{color:var(--warn)}
-.pc-gap.ahead{color:var(--muted)}
-.pbar{position:relative;height:14px;background:#e8ebf0;border:1px solid #dde1e8;border-radius:7px;margin-top:10px}
-.pbar-fill{position:absolute;left:0;top:0;bottom:0;background:var(--accent);border-radius:7px}
-.pbar-lag{position:absolute;top:0;bottom:0;background:var(--warn);border-radius:0 4px 4px 0}
-.pbar-marker{position:absolute;top:-4px;bottom:-4px;width:2px;background:#39414e;border-radius:1px;z-index:2}
-/* ---------- 资产配置双环偏差图（v0.21.0） ---------- */
-.alloc-summary{
-  display:flex;align-items:center;gap:18px;flex-wrap:wrap;
-  background:var(--card);border:1px solid var(--line);border-radius:10px;
-  padding:10px 16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(16,24,40,.05);
-  font-size:13px;color:var(--muted);
+.dca-legend .lg{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.dca-legend .lg i{width:11px;height:11px;border-radius:2px;flex:none}
+.dca-legend .lg i.ln{width:16px;height:3px;border-radius:2px}
+.dca-legend .muted-note{margin-left:auto}
+.dca-scroll{
+  overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;
+  border:1px solid var(--line);border-radius:10px;background:var(--card);
+  box-shadow:0 1px 3px rgba(16,24,40,.05);
 }
-.alloc-summary b{font-size:13.5px}
-/* v0.21.1：用 grid-template-areas 显式定区域，使 DOM 顺序与两种断点下的视觉顺序解耦。
-   桌面：环图/列表在左列，明细面板跨两行贴右（sticky）；手机：环图 → 面板 → 列表。 */
-.alloc-main{
-  display:grid;gap:20px 24px;align-items:start;margin-bottom:16px;
-  grid-template-columns:minmax(0,1fr) 380px;
-  grid-template-areas:"ring detail" "list detail";
-}
-.alloc-ringwrap{grid-area:ring;min-width:0}
-.alloc-lgwrap{grid-area:list;min-width:0}
-.alloc-ringwrap{position:relative;display:flex;justify-content:center;padding:4px 0 10px}
-.alloc-ring{width:100%;max-width:340px;height:auto;display:block;overflow:visible}
+.dca-svg{display:block;height:auto}
+.dca-col{cursor:default}
+.dca-col:hover{opacity:.82}
+/* ---------- 资产配置（v0.22.0）：小环 + 明细表 ---------- */
+.alloc-main{display:flex;align-items:flex-start;gap:22px;flex-wrap:wrap}
+.alloc-ringwrap{flex:0 0 auto;width:200px;display:flex;justify-content:center;padding:4px 0}
+.alloc-ring{width:100%;max-width:200px;height:auto;display:block;overflow:visible}
 .alloc-ring text{font-family:inherit;pointer-events:none;user-select:none}
-/* 扇区交互：transform-origin 必须钉在 viewBox 中心(100,100)，
-   否则缩放中心会落到元素自身 bbox 中心导致扇区飞出画布 */
-.alloc-sec{
-  cursor:pointer;
-  transform-box:view-box;transform-origin:100px 100px;
-  transition:opacity .16s ease,transform .16s ease;
-}
-.alloc-sec.dim{opacity:.22;transform:scale(.96)}
-.alloc-mk{transform-box:view-box;transform-origin:100px 100px;transition:opacity .16s ease,transform .16s ease;pointer-events:none}
-.alloc-mk.dim{opacity:.2;transform:scale(.96)}
-.alloc-lbl{transition:opacity .16s ease;pointer-events:none}
-.alloc-lbl-name text{font-weight:600;paint-order:stroke;stroke:rgba(0,0,0,.18);stroke-width:.6px}
-.alloc-lbl.dim{opacity:.2}
-.alloc-lbl.sel text{font-weight:700}
-.alloc-tip{
-  position:absolute;z-index:20;pointer-events:none;
-  background:#fff;border:1px solid var(--line);border-radius:8px;
-  padding:8px 10px;font-size:11.5px;line-height:1.7;color:var(--text);
-  box-shadow:0 6px 20px rgba(16,24,40,.14);white-space:nowrap;
-}
-.alloc-tip b{font-size:12.5px}
-.alloc-tip .r{display:flex;justify-content:space-between;gap:14px}
-.alloc-tip .r span:first-child{color:var(--muted)}
-.alloc-tip .n{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
-/* 环下「目标 vs 实际」对比列表（v0.21.1）：单列每行一标的，两个数字定宽右对齐跨行对齐 */
-.alloc-legend{display:flex;flex-direction:column;gap:6px}
-.alloc-lg{
-  display:grid;grid-template-columns:10px minmax(0,1fr) 84px 84px;align-items:center;gap:10px;
-  text-align:left;cursor:pointer;
-  border:1px solid var(--line);background:var(--card);border-radius:8px;
-  padding:8px 12px;font-size:13px;color:var(--text);font-family:inherit;
-  transition:border-color .16s ease,background .16s ease;
-}
-.alloc-lg:hover{border-color:var(--accent)}
-.alloc-lg.sel{border-color:var(--accent);background:#f4f7ff;box-shadow:0 0 0 2px rgba(47,111,237,.16)}
-.alloc-lg i{width:10px;height:10px;border-radius:3px;flex:none}
-.alloc-lg .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.alloc-lg .tgt,.alloc-lg .act{text-align:right;white-space:nowrap;font-size:12.5px}
-.alloc-lg .tgt{color:var(--muted)}
-.alloc-lg .act{font-weight:700}
-.alloc-hint{margin-top:10px;font-size:11.5px;color:var(--muted);line-height:1.7;text-align:center}
-/* 明细面板：三段分区，语义隔离（见方案 §3.4） */
-.alloc-dpanel{
-  grid-area:detail;
-  background:var(--card);border:1px solid var(--line);border-radius:10px;
-  box-shadow:0 1px 3px rgba(16,24,40,.05);overflow:hidden;position:sticky;top:12px;
-}
-.alloc-dph{
-  padding:30px 18px;text-align:center;color:var(--muted);font-size:12.5px;line-height:2;
-  display:flex;flex-direction:column;align-items:center;gap:8px;
-}
-.alloc-dph .ico{
-  width:40px;height:40px;border-radius:50%;border:1px dashed #cfd4dc;
-  display:flex;align-items:center;justify-content:center;font-size:17px;color:var(--faint);
-}
-.alloc-dhead{
-  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
-  padding:10px 12px;border-bottom:1px solid var(--line);background:var(--card2);
-}
-.alloc-dhead .nm{font-size:14px;font-weight:700}
-.alloc-dhead .code{font-size:12px;color:var(--muted)}
-.alloc-dhead .x{
-  margin-left:auto;width:24px;height:24px;border-radius:6px;cursor:pointer;
-  border:1px solid var(--line);background:var(--card);color:var(--muted);
-  font-size:16px;line-height:1;padding:0;font-family:inherit;
-}
-.alloc-dhead .x:hover{color:var(--text);border-color:var(--accent)}
-.alloc-dbody{padding:10px 12px 12px}
-.alloc-dsec{
-  font-size:11px;color:var(--muted);margin:9px 0 3px;padding-top:7px;
-  border-top:1px dashed var(--line);
-}
-.alloc-dbody > .alloc-dsec:first-child{margin-top:0;padding-top:0;border-top:none}
-.alloc-drow{display:flex;align-items:baseline;gap:10px;padding:3px 0;font-size:12.5px}
-.alloc-drow .l{flex:1;color:var(--muted);min-width:0}
-.alloc-drow .v{font-weight:600;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
-.alloc-dbody.over{background:#fdf8f5;border-radius:6px}
-.alloc-dbody.over .alloc-drow:last-child .v{color:var(--warn)}
-.alloc-dfoot{padding:8px 12px;font-size:11px;color:var(--muted);line-height:1.6;border-top:1px solid var(--line);background:var(--card2)}
-.tag-out{
-  font-size:11px;color:var(--muted);border:1px solid var(--line);
-  background:var(--card2);border-radius:4px;padding:1px 6px;font-weight:400;
-}
-/* 总市值为 0 时的降级：只列目标配置 */
-.alloc-onlyw{display:flex;flex-direction:column;gap:8px}
-.alloc-wrow{
-  display:flex;align-items:center;gap:10px;background:var(--card);
-  border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:13.5px;
-}
-.alloc-wrow i{width:10px;height:10px;border-radius:3px;flex:none}
-.alloc-wrow .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.alloc-wrow .pc{font-weight:700}
-.alloc-wrow .muted{font-size:12px}
+.alloc-scroll{flex:1 1 420px;min-width:0;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.alloc-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.alloc-tbl th,.alloc-tbl td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.alloc-tbl thead th{font-size:11.5px;color:var(--muted);font-weight:400;text-align:right}
+.alloc-tbl .c-name{text-align:left;min-width:150px;white-space:normal}
+.alloc-tbl .c-name i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:8px;vertical-align:middle;flex:none}
+.alloc-tbl .c-name .nm{font-weight:600}
+.alloc-tbl .c-name .tag-fund,.alloc-tbl .c-name .tag-out{margin-left:6px}
+.alloc-tbl .c-name .badge-cleared{margin-left:6px}
+.alloc-tbl td.num{font-variant-numeric:tabular-nums}
+.alloc-tbl td.ov{color:var(--warn);font-weight:700}
 #toast{
   position:fixed;left:50%;bottom:36px;transform:translateX(-50%);
   background:#333a48;color:#fff;padding:9px 20px;border-radius:8px;
@@ -542,8 +448,8 @@ body{
   .tabs{gap:0}
   .tab{flex:1;text-align:center;padding:11px 0;font-size:13px}
   .plan-head{display:none}
-  .plan-cards{gap:10px}
-  .plan-card{flex:1 1 150px;min-width:150px;max-width:none}
+  .dca-legend{gap:6px 12px;font-size:11px}
+  .dca-legend .muted-note{margin-left:0;flex-basis:100%}
   .toolbar{flex-wrap:wrap}
   .toolbar .tool-label:first-of-type,
   #sortDate,#sortCode,#btnExportCsv{display:none}
@@ -554,12 +460,10 @@ body{
   .tx-table th:nth-child(8),.tx-table td:nth-child(8),
   .tx-table th:nth-child(9),.tx-table td:nth-child(9){display:none}
   .tx-table th,.tx-table td{padding:8px 4px}
-  /* v0.21.1：手机端顺序 环图 → 明细面板 → 列表 → hint
-     面板排在列表上方，点列表行后往上看一屏就是明细，无需 scrollIntoView 跳转 */
-  .alloc-main{grid-template-columns:1fr;gap:14px;grid-template-areas:"ring" "detail" "list"}
-  .alloc-dpanel{position:static}
-  .alloc-ring{max-width:320px}
-  .alloc-lg{grid-template-columns:10px minmax(0,1fr) 72px 72px;gap:8px;padding:8px 10px}
+  /* v0.22.0：手机端 小环在上、明细表在下（整表横向滚动） */
+  .alloc-main{gap:14px}
+  .alloc-ringwrap{width:170px}
+  .alloc-tbl th,.alloc-tbl td{padding:8px 6px;font-size:12.5px}
   .modal-head{padding:12px 14px}
   .modal-body{padding:14px}
   .modal-foot{padding:10px 14px calc(10px + env(safe-area-inset-bottom))}
@@ -2739,6 +2643,173 @@ function openEditFundModal(id) {
   };
 }
 
+/* ===================== 定投进度图表（v0.22.0） =====================
+   卡片墙 → 单张 SVG 柱状图。每根柱占一个 x 槽位，槽内上下堆叠：成本从 0 向上，
+   盈利段接在成本柱顶端（柱顶=市值），亏损段从 0 向下、与成本柱分离。
+   期末目标（黑粗线）与按时间进度应投（橙线）作为标尺横穿全图。
+   全部量程由数据推导、零硬编码；正负两侧共用同一套「向上取整到整齐刻度」规则，
+   负区间高度下限 25%，避免亏损被压成一条看不见的线。
+   只画场内标的，顺序沿用 sortedHoldings() 的 order 拖拽序；计划外 w=0 保留一列
+   但不画标尺线（缺线本身就是「不在计划内」的信号）。
+   数据全部取自现有对象（shares/avgCost/posPL/plan.weights），零新增请求、零结构变更。
+   方案见 0930_03_修改方案_定投进度与资产配置双Tab重构v0.22.0.md §2.2 / §3.2
+   ======================================================================== */
+const DCA_COL_W = 104;    /* 每根柱的列宽(px)，也是手机端横向滚动的最小单位 */
+const DCA_BAR_MAX = 64;   /* 柱宽上限；实际取 min(此值, 列宽×0.46)，见方案 §三「柱宽 min(64, 列宽×0.46)」 */
+const DCA_MIN_W = 640;    /* 图表最小总宽：标的少时也不塌成一条窄带，多余部分留白 */
+const DCA_H = 320;
+const DCA_PAD_L = 92;     /* 左侧刻度留白：够放 "−¥10,000" */
+const DCA_PAD_R = 24;
+const DCA_PAD_T = 30;
+const DCA_PAD_B = 88;     /* 底部 4 行文字(名称/盈亏/收益率/超配成本) */
+const DCA_NEG_MIN = 0.25; /* 负区间占图高下限：亏损不能被压扁 */
+const DCA_NEG_MAX = 0.50;
+const DCA_EPS = 0.005;    /* 金额判定容差，与旧卡片一致 */
+
+/* 向上取整到 1/2/2.5/5/10 × 10^n 的整齐刻度；v<=0 兜底为 1 */
+function dcaNiceStep(v) {
+  v = Number(v) || 0;
+  if (!(v > 0)) return 1;
+  const e = Math.pow(10, Math.floor(Math.log10(v)));
+  const M = [1, 2, 2.5, 5, 10];
+  for (let i = 0; i < M.length; i++) if (v <= M[i] * e + 1e-9) return M[i] * e;
+  return 10 * e;
+}
+/* 刻度金额：整数不带小数，否则两位；负号用 U+2212 减号（与正文一致） */
+function dcaTick(v) {
+  const n = Number(v) || 0, a = Math.abs(n);
+  const body = Number.isInteger(a) ? a.toLocaleString('zh-CN')
+    : a.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (n < 0 ? '\u2212¥' : '¥') + body;
+}
+function dcaChartData(plan, tp) {
+  return sortedHoldings()
+    .filter(h => h.type !== 'fund' && (!h.cleared || (plan.weights[h.id] || 0) > 0))
+    .map(h => {
+      const w = plan.weights[h.id] || 0;
+      const sh = h.shares || 0;
+      const cost = sh * (h.avgCost || 0);
+      const targetAbs = plan.totalTarget * w / 100;
+      const should = targetAbs * tp;
+      const r = posPL(h);
+      return {
+        h: h, name: h.name, code: h.code, cleared: !!h.cleared,
+        w: w, hasPlan: w > 0,
+        cost: cost, mv: sh * (h.currentPrice || 0),
+        targetAbs: targetAbs, should: should, overCost: cost - should,
+        gap: should - cost,
+        pl: r ? r.pl : 0, hasPL: !!r,
+        pct: r && Number.isFinite(r.pct) ? r.pct : null
+      };
+    });
+}
+function dcaChartSVG(rows) {
+  const n = rows.length;
+  if (!n) return '';
+  const W = Math.max(DCA_MIN_W, DCA_PAD_L + n * DCA_COL_W + DCA_PAD_R);
+  const plotTop = DCA_PAD_T, plotBot = DCA_H - DCA_PAD_B;
+  const plotH = plotBot - plotTop, plotW = W - DCA_PAD_L - DCA_PAD_R;
+  const colW = plotW / n;
+  const barW = Math.min(DCA_BAR_MAX, colW * 0.46);
+  const x0 = DCA_PAD_L, x1 = W - DCA_PAD_R;
+
+  /* ---- 量程：正侧含黑线（目标线必须落在轴内），负侧不压缩 ---- */
+  let upMax = 0, dnMax = 0;
+  rows.forEach(x => {
+    upMax = Math.max(upMax, x.cost + Math.max(x.pl, 0), x.targetAbs, x.should);
+    if (x.pl < 0) dnMax = Math.max(dnMax, -x.pl);
+  });
+  upMax = upMax > 0 ? upMax : 1;
+  const posStep = dcaNiceStep(upMax / 4);
+  const posK = Math.floor(upMax / posStep);
+  /* DN_MAX=0 也要留出负区间，否则盈亏轴左右不对称 */
+  const negStep = dcaNiceStep(dnMax / 2);
+  const negDivs = Math.max(1, Math.ceil(dnMax / negStep - 1e-9));
+  const negSpan = negStep * negDivs;
+  const negFrac = Math.min(DCA_NEG_MAX, Math.max(DCA_NEG_MIN, negSpan > 0 ? dnMax / negSpan : 0));
+  const negH = plotH * negFrac, posH = plotH - negH, zeroY = plotTop + posH;
+  const ypos = v => zeroY - (v / upMax) * posH;
+  /* yneg 统一约定：只接受「正的数量级」。曾写成 zeroY + (-v/span)*h，
+     符号反向会把负侧网格线全画到零轴上方（0930_03 §0.1 bug#1），此处以注释固化。 */
+  const yneg = mag => zeroY + (mag / negSpan) * negH;
+
+  const s = [];
+  s.push('<svg class="dca-svg" xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + DCA_H +
+    '" viewBox="0 0 ' + W + ' ' + DCA_H + '" role="img" aria-label="定投进度柱状图">' +
+    '<rect x="0" y="0" width="' + W + '" height="' + DCA_H + '" fill="var(--card)"/>');
+
+  /* 网格线：正负两侧同色同规则，0 轴单独用深色加粗 */
+  const gl = yy => '<line x1="' + x0 + '" y1="' + yy.toFixed(1) + '" x2="' + x1 +
+    '" y2="' + yy.toFixed(1) + '" stroke="var(--line)" stroke-width="1"/>';
+  const al = (v, yy) => '<text x="' + (x0 - 8) + '" y="' + (yy + 3.5).toFixed(1) +
+    '" text-anchor="end" font-size="10.5" fill="var(--muted)">' + dcaTick(v) + '</text>';
+  for (let i = 1; i <= posK; i++) { const yy = ypos(posStep * i); if (yy > plotTop + 1) s.push(gl(yy)); }
+  for (let i = 1; i <= negDivs; i++) {
+    /* 守卫用 <= ：最外侧线按构造正好落在 plotBot 上，正是需要的那条，不能裁掉 */
+    const yy = yneg(negStep * i);
+    if (yy <= plotBot + 1) s.push(gl(yy));
+  }
+  s.push('<line x1="' + x0 + '" y1="' + zeroY.toFixed(1) + '" x2="' + x1 + '" y2="' + zeroY.toFixed(1) +
+    '" stroke="var(--text)" stroke-width="1.6"/>');
+  for (let i = 1; i <= posK; i++) { const yy = ypos(posStep * i); if (yy > plotTop + 1) s.push(al(posStep * i, yy)); }
+  for (let i = 1; i <= negDivs; i++) {
+    const yy = yneg(negStep * i);
+    if (yy <= plotBot + 1) s.push(al(-negStep * i, yy));
+  }
+  s.push(al(0, zeroY) + al(upMax, plotTop));
+
+  /* ---- 柱体 + 标尺线 + 轴下文字 ---- */
+  const TXT = 'font-size="10.5" text-anchor="middle"';
+  rows.forEach((x, i) => {
+    const cx = x0 + colW * (i + 0.5);
+    const bx = cx - barW / 2;
+    const top = x.cost + x.pl;
+    s.push('<g class="dca-col">');
+    s.push('<title>' + esc(x.name + (x.code ? '（' + x.code + '）' : '') +
+      '　成本 ¥' + fmtMoney(x.cost) + '　市值 ¥' + fmtMoney(x.mv) +
+      '　盈亏 ' + (x.hasPL ? fmtSigned(x.pl) : '--') +
+      '　' + (x.pct != null ? fmtPct(x.pct) : '') +
+      '　' + (x.hasPlan ? '期末目标 ¥' + fmtMoney(x.targetAbs) + '　按进度应投 ¥' + fmtMoney(x.should) : '未纳入定投计划')) +
+      '</title>');
+    if (x.cost > 0) {
+      const h = ypos(0) - ypos(x.cost);
+      s.push('<rect x="' + bx.toFixed(1) + '" y="' + ypos(x.cost).toFixed(1) + '" width="' + barW.toFixed(1) +
+        '" height="' + Math.max(0, h).toFixed(1) + '" fill="var(--dca-cost)" rx="2"/>');
+    }
+    if (x.pl > DCA_EPS && top > x.cost) {
+      s.push('<rect x="' + bx.toFixed(1) + '" y="' + ypos(top).toFixed(1) + '" width="' + barW.toFixed(1) +
+        '" height="' + Math.max(0, ypos(x.cost) - ypos(top)).toFixed(1) + '" fill="var(--up)" rx="2"/>');
+    } else if (x.pl < -DCA_EPS) {
+      s.push('<rect x="' + bx.toFixed(1) + '" y="' + zeroY.toFixed(1) + '" width="' + barW.toFixed(1) +
+        '" height="' + Math.max(0, yneg(-x.pl) - zeroY).toFixed(1) + '" fill="var(--down)" rx="2"/>');
+    }
+    if (x.hasPlan) {
+      const h1 = barW / 2 + 8;
+      const yt = ypos(x.targetAbs), ys = ypos(x.should);
+      s.push('<line x1="' + (cx - h1).toFixed(1) + '" y1="' + yt.toFixed(1) + '" x2="' + (cx + h1).toFixed(1) +
+        '" y2="' + yt.toFixed(1) + '" stroke="var(--text)" stroke-width="2.4"/>');
+      s.push('<line x1="' + (cx - h1).toFixed(1) + '" y1="' + ys.toFixed(1) + '" x2="' + (cx + h1).toFixed(1) +
+        '" y2="' + ys.toFixed(1) + '" stroke="var(--warn)" stroke-width="2" stroke-dasharray="4 2"/>');
+    }
+    const nm = String(x.name || '');
+    s.push('<text x="' + cx.toFixed(1) + '" y="' + (plotBot + 18) + '" ' + TXT + ' font-weight="600" fill="var(--text)">' +
+      esc(nm.length > 5 ? nm.slice(0, 5) + '…' : nm) + '</text>');
+    const plc = x.pl > DCA_EPS ? 'var(--up)' : x.pl < -DCA_EPS ? 'var(--down)' : 'var(--muted)';
+    s.push('<text x="' + cx.toFixed(1) + '" y="' + (plotBot + 34) + '" ' + TXT + ' fill="' + plc + '">' +
+      (x.hasPL ? fmtSigned(x.pl) : '--') + '</text>');
+    s.push('<text x="' + cx.toFixed(1) + '" y="' + (plotBot + 50) + '" ' + TXT + ' fill="' + plc + '">' +
+      (x.pct != null ? fmtPct(x.pct) : '--') + '</text>');
+    const oc = x.overCost;
+    s.push('<text x="' + cx.toFixed(1) + '" y="' + (plotBot + 66) + '" ' + TXT + ' fill="' +
+      (oc > DCA_EPS ? 'var(--warn)' : 'var(--muted)') + '">' +
+      (!x.hasPlan ? '计划外' : oc > DCA_EPS ? '超配 ¥' + fmtMoney(oc)
+        : oc < -DCA_EPS ? '欠投 ¥' + fmtMoney(-oc) : '达标') + '</text>');
+    s.push('</g>');
+  });
+  s.push('</svg>');
+  return s.join('');
+}
+
 function renderPlan() {
   const sec = el('planSection');
   const plan = getActivePlan();
@@ -2747,33 +2818,9 @@ function renderPlan() {
     return;
   }
   const tp = timeProgress(plan);
-  const parts = sortedHoldings().filter(h => h.type !== 'fund' && (!h.cleared || (plan.weights[h.id] || 0) > 0));
-  let cards = '', totalGap = 0;
-  parts.forEach(h => {
-    const w = plan.weights[h.id] || 0;
-    const targetAbs = plan.totalTarget * w / 100;
-    const cost = (h.avgCost || 0) * (h.shares || 0);
-    const should = targetAbs * tp;
-    const gap = should - cost;
-    if (gap > 0) totalGap += gap;
-    const r = posPL(h);
-    const fillPct = targetAbs > 0 ? Math.min(100, Math.max(0, cost / targetAbs * 100)) : 0;
-    const markPct = targetAbs > 0 ? Math.min(100, Math.max(0, should / targetAbs * 100)) : 0;
-    let gapHtml;
-    if (gap > 0.005) gapHtml = '<div class="pc-gap lag">还需买入 ¥' + fmtMoney(gap) + '</div>';
-    else if (gap < -0.005) gapHtml = '<div class="pc-gap ahead">已多投 ¥' + fmtMoney(-gap) + '</div>';
-    else gapHtml = '<div class="pc-gap ahead">已达标</div>';
-    let lagBar = '';
-    if (gap > 0.005 && markPct > fillPct) {
-      lagBar = '<div class="pbar-lag" style="left:' + fillPct.toFixed(2) + '%;width:' + (markPct - fillPct).toFixed(2) + '%"></div>';
-    }
-    cards += '<div class="plan-card">' +
-      '<div class="pc-head"><span class="code num">' + esc(h.code) + '</span><span>' + esc(h.name) + '</span>' + (h.cleared ? '<span class="badge-cleared">已清仓</span>' : '') + '</div>' +
-      '<div class="pc-pl num' + (r === null ? '' : ' ' + cls(r.pl)) + '">' + (r === null ? '--' : fmtSigned(r.pl) + ' (' + fmtPct(r.pct === null ? 0 : r.pct) + ')') + '</div>' +
-      gapHtml +
-      '<div class="pbar"><div class="pbar-fill" style="width:' + fillPct.toFixed(2) + '%"></div>' + lagBar + '<div class="pbar-marker" style="left:calc(' + markPct.toFixed(2) + '% - 1px)"></div></div>' +
-    '</div>';
-  });
+  const rows = dcaChartData(plan, tp);
+  let totalGap = 0;
+  rows.forEach(x => { if (x.gap > 0) totalGap += x.gap; });
   sec.innerHTML =
     '<div class="plan-head">' +
       '<span class="ph-total">定投进度</span>' +
@@ -2782,7 +2829,17 @@ function renderPlan() {
       '<div class="grow"></div>' +
       '<button class="btn" data-goplan>⚙ 配置</button>' +
     '</div>' +
-    '<div class="plan-cards">' + (cards || '') + '</div>';
+    (rows.length
+      ? '<div class="dca-legend">' +
+          '<span class="lg"><i style="background:var(--dca-cost)"></i>成本</span>' +
+          '<span class="lg"><i style="background:var(--up)"></i>盈利</span>' +
+          '<span class="lg"><i style="background:var(--down)"></i>亏损</span>' +
+          '<span class="lg"><i class="ln" style="background:var(--text)"></i>期末目标</span>' +
+          '<span class="lg"><i class="ln" style="background:var(--warn)"></i>按进度应投</span>' +
+          '<span class="lg muted-note">柱顶＝市值 · 无标尺线＝未纳入计划</span>' +
+        '</div>' +
+        '<div class="dca-scroll">' + dcaChartSVG(rows) + '</div>'
+      : '<div class="empty" style="padding:26px 0">暂无可展示的场内标的</div>');
 }
 
 function openPlanConfigModal(selectId) {
@@ -2903,17 +2960,7 @@ function openPlanConfigModal(selectId) {
    数据全部取自现有对象（marketValue/posPL/plan.weights），零新增请求、零数据结构变更
 */
 const ALLOC_COLORS = ['#2563eb', '#0d9488', '#7c3aed', '#059669', '#475569', '#ea580c', '#e11d48', '#0891b2'];
-const ALLOC_OTHER_COLOR = '#94a3b8';
-const ALLOC_OTHER_KEY = '__other__';
 const ALLOC_MIN_SWEEP = 1.2;   /* 0 角度扇区的最小可见角宽(度)；外环 r=90 时约 1.9px，保证已清仓标的点得到 */
-const ALLOC_MERGE_PCT = 1;     /* w=0 且 市值占比 < 1% 合并进「其他 N 只」 */
-/* 环上标签（v0.21.1）：只画名称，弧长放得下才画。
-   注意 font-size 与扇区同为 viewBox 单位，会等比缩放（340px/200 = 1.7×），
-   因此必须用「弧长 ≥ 字宽」判断而非屏幕像素思维 —— 这样缩放系数自动约掉。 */
-const ALLOC_LBL_FS = 6.4;      /* 标签字号(viewBox 单位)；340px 宽时 = 6.4×1.7 ≈ 10.9px 实际 */
-const ALLOC_LBL_R = 81;        /* 标签基线半径 = 外环带正中 (72+90)/2 */
-const ALLOC_LBL_PAD = 1.18;    /* 弧长/字宽 安全系数，留 18% 余量 */
-let allocSelId = null;         /* 选中态：内存变量，不入 state/localStorage —— 不点击就不显示明细 */
 
 function allocRows(plan, totalMV) {
   const thr = plan && plan.driftThreshold > 0 ? plan.driftThreshold : 5;
@@ -2923,53 +2970,39 @@ function allocRows(plan, totalMV) {
     const mv = shares * (h.currentPrice || 0);
     return { h: h, w: w, mv: mv, cost: shares * (h.avgCost || 0) };
   }).filter(r => r.w > 0 || r.mv > 0);
+  /* v0.22.0：默认按市值降序（表格是市值口径，量级自上而下递减最易读），
+     计划外的同市值按名称排，保证顺序稳定可预期 */
   src.sort((x, y) =>
-    (y.w - x.w) ||
-    (totalMV > 0 ? (y.mv - x.mv) : 0) ||
-    String(x.h.code || '').localeCompare(String(y.h.code || ''))
+    (y.mv - x.mv) ||
+    String(x.h.name || '').localeCompare(String(y.h.name || ''), 'zh-CN')
   );
   const rowsCost = src.reduce((s, r) => s + r.cost, 0);
+  const tp = plan ? timeProgress(plan) : 0;
+  const targetTotal = (plan && plan.totalTarget > 0) ? plan.totalTarget : 0;
   const rows = src.map((r, i) => {
     const a = totalMV > 0 ? r.mv / totalMV * 100 : 0;
     const dev = a - r.w;
     const pl = posPL(r.h);
     return {
       key: String(r.h.id), h: r.h, code: r.h.code, name: r.h.name, cleared: !!r.h.cleared,
+      isFund: r.h.type === 'fund', outside: r.w <= 0,
       color: ALLOC_COLORS[i % ALLOC_COLORS.length], idx: i,
       w: r.w, a: a, mv: r.mv, cost: r.cost,
-      costA: rowsCost > 0 ? r.cost / rowsCost * 100 : 0,
       dev: dev, over: Math.abs(dev) > thr,
       devValue: totalMV > 0 ? dev / 100 * totalMV : 0,
-      rate: pl && Number.isFinite(pl.pct) ? pl.pct : null,
-      merged: false, members: null
+      /* 超配成本 = 已投入成本 − 期末目标金额 × 时间进度；正数=多投，负数=少投。
+         Σ超配成本 ≠ 0（Σ成本 ≠ Σ期末目标），这是"钱还没投完"的量，不能当偏离看。 */
+      overCost: r.cost - targetTotal * r.w / 100 * tp,
+      rate: pl && Number.isFinite(pl.pct) ? pl.pct : null
     };
   });
   return {
-    thr: thr, totalMV: totalMV, rowsCost: rowsCost, rows: rows,
-    sumW: rows.reduce((s, r) => s + r.w, 0),
-    sumWErr: Math.abs(rows.reduce((s, r) => s + r.w, 0) - 100),
+    thr: thr, totalMV: totalMV, rowsCost: rowsCost, rows: rows, tp: tp, targetTotal: targetTotal,
+    sumA: rows.reduce((s, r) => s + r.a, 0),
     overCount: rows.filter(r => r.over).length,
+    sumDev: rows.reduce((s, r) => s + r.dev, 0),
     sumDevValue: rows.reduce((s, r) => s + r.devValue, 0)
   };
-}
-function allocRingRows(rows) {
-  const head = rows.filter(r => r.w > 0);
-  const tail = rows.filter(r => r.w <= 0);
-  const rest = tail.filter(r => r.a >= ALLOC_MERGE_PCT);
-  const small = tail.filter(r => r.a < ALLOC_MERGE_PCT);
-  const out = head.concat(rest);
-  if (small.length) {
-    const aSum = small.reduce((s, r) => s + r.a, 0);
-    out.push({
-      key: ALLOC_OTHER_KEY, h: null, code: '', name: '其他 ' + small.length + ' 只',
-      color: ALLOC_OTHER_COLOR, idx: -1, cleared: false, merged: true, members: small,
-      w: 0, a: aSum, mv: small.reduce((s, r) => s + r.mv, 0),
-      cost: small.reduce((s, r) => s + r.cost, 0), costA: 0, rate: null,
-      dev: small.reduce((s, r) => s + r.dev, 0), over: small.some(r => r.over),
-      devValue: small.reduce((s, r) => s + r.devValue, 0)
-    });
-  }
-  return out;
 }
 function allocPt(cx, cy, r, deg) {
   const rad = deg * Math.PI / 180;
@@ -2988,164 +3021,56 @@ function allocArcPath(cx, cy, rOut, rIn, a0, a1) {
     'L' + p3[0].toFixed(2) + ' ' + p3[1].toFixed(2) +
     'A' + rIn + ' ' + rIn + ' 0 ' + la + ' 0 ' + p4[0].toFixed(2) + ' ' + p4[1].toFixed(2) + 'Z';
 }
-function allocMarkerPath(cx, cy, r, deg) {
-  const rad = deg * Math.PI / 180;
-  const dx = Math.sin(rad), dy = -Math.cos(rad);
-  const px = Math.cos(rad), py = Math.sin(rad);
-  const tx = cx + dx * r, ty = cy + dy * r;
-  const bx = tx - dx * 5, by = ty - dy * 5;
-  return 'M' + tx.toFixed(2) + ' ' + ty.toFixed(2) +
-    'L' + (bx - px * 3.6).toFixed(2) + ' ' + (by - py * 3.6).toFixed(2) +
-    'L' + (bx + px * 3.6).toFixed(2) + ' ' + (by + py * 3.6).toFixed(2) + 'Z';
-}
-/* 估算文字宽度（viewBox 单位）。与扇区同尺度，故与缩放系数无关。
-   em 宽按字形分类：CJK/全角 1.0，数字 0.56，大写字母 0.62，其余（空格、连字符等）0.5 */
-function allocTextW(txt, fs) {
-  let em = 0;
-  for (const ch of String(txt)) {
-    const c = ch.codePointAt(0);
-    if (c > 0x2e80) em += 1.0;
-    else if (c >= 48 && c <= 57) em += 0.56;
-    else if (c >= 65 && c <= 90) em += 0.62;
-    else em += 0.5;
-  }
-  return em * fs;
-}
-/* 环上径向标签：rotate(θ) 配左右半区翻转，使文字读向始终朝外、不倒置 */
-function allocLabel(deg, r, txt, fs, clsName) {
-  /* deg = 0 位于 12 点方向。文字先按 deg 随半径旋转，再翻转 180° 使读向始终朝外；
-     需翻转两次才能覆盖 270°~360° 区间（单次 -180 会落到 (90,180] 仍然倒置） */
-  let rr = deg % 360;
-  if (rr < 0) rr += 360;
-  if (rr > 90) rr = rr > 270 ? rr - 360 : rr - 180;
-  return '<g class="alloc-lbl ' + clsName + '" transform="rotate(' + rr.toFixed(1) + ' 100 100)">' +
-    '<text x="100" y="' + (100 - r).toFixed(1) + '" text-anchor="middle" dominant-baseline="central" ' +
-    'font-size="' + fs + '" fill="#fff">' + esc(txt) + '</text></g>';
-}
-function allocRingSVG(A, sel) {
-  const ring = allocRingRows(A.rows);
+function allocRingSVG(A) {
+  const rows = A.rows;
   const p = [];
-  let wi = -90, wo = -90;
-  ring.forEach(r => {
-    const wDeg = r.w / 100 * 360, aDeg = r.a / 100 * 360;
-    const isSel = sel != null && r.key === String(sel);
-    const c = isSel ? ' sel' : (sel != null ? ' dim' : '');
-    const st = isSel ? ' stroke="#0f172a" stroke-opacity=".85" stroke-width="2.4"'
-      : (r.over ? ' stroke="#0f172a" stroke-opacity=".55" stroke-width="1.6"' : '');
-    /* 外环：a=100% 时圆弧起点终点重合会让 path 退化为零面积，必须改画 <circle> 描边环 */
+  /* 外环：a=100% 时圆弧起点终点重合会让 path 退化为零面积，必须改画 <circle> 描边环。
+     0 角度扇区（已清仓但仍有市值极小）给一个最小可见角宽。 */
+  let acc = 0;
+  rows.forEach(r => {
+    let aDeg = r.a / 100 * 360;
+    if (aDeg > 0 && aDeg < ALLOC_MIN_SWEEP) aDeg = ALLOC_MIN_SWEEP;
     if (aDeg >= 359.999) {
-      p.push('<circle class="alloc-sec' + c + '" data-k="' + esc(r.key) + '" cx="100" cy="100" r="81" ' +
-        'fill="none" stroke="' + r.color + '" stroke-width="18"' + (st ? ' ' + st : '') + '/>');
+      p.push('<circle cx="100" cy="100" r="81" fill="none" stroke="' +
+        r.color + '" stroke-width="18"/>');
     } else {
-      p.push('<path class="alloc-sec' + c + '" data-k="' + esc(r.key) + '" d="' +
-        allocArcPath(100, 100, 90, 72, wo, wo + aDeg) + '" fill="' + r.color + '" fill-opacity="0.88"' +
-        (st ? ' ' + st : '') + '/>');
+      p.push('<path d="' + allocArcPath(100, 100, 90, 72, acc, acc + aDeg) +
+        '" fill="' + r.color + '" fill-opacity="0.88"/>');
     }
-    /* 内环：w=0（计划外）不画内环扇区 —— 这正是"计划外"的视觉表达 */
-    if (wDeg >= 359.999) {
-      p.push('<circle class="alloc-sec' + c + '" data-k="' + esc(r.key) + '" cx="100" cy="100" r="56" ' +
-        'fill="none" stroke="' + r.color + '" stroke-width="16" stroke-opacity="0.32"' +
-        (isSel ? ' stroke="#0f172a" stroke-opacity=".85" stroke-width="2.4"' : '') + '/>');
-    } else if (wDeg > 0) {
-      p.push('<path class="alloc-sec' + c + '" data-k="' + esc(r.key) + '" d="' +
-        allocArcPath(100, 100, 64, 48, wi, wi + wDeg) + '" fill="' + r.color + '" fill-opacity="0.32"' +
-        (isSel ? ' stroke="#0f172a" stroke-opacity=".85" stroke-width="2.4"' : '') + '/>');
-    }
-    /* 环上标签：只画名称（v0.21.1 移除占比标签）。
-       弧长准入 = 硬保证不叠：标签只在自己那个扇区的弧长内绘制，而扇区互不重叠，
-       故相邻标签切向重叠在数学上不可能发生。放不下的留白，名称一定在环下列表里读得到。 */
-    if (aDeg > 0) {
-      const arc = aDeg / 360 * 2 * Math.PI * ALLOC_LBL_R;
-      /* 单扇区 100% 时「扇区中点」在 3 点钟方向会竖排，改为固定 12 点横排 */
-      const lblDeg = ring.length === 1 ? 0 : wo + aDeg / 2;
-      if (arc >= allocTextW(r.name, ALLOC_LBL_FS) * ALLOC_LBL_PAD) {
-        p.push(allocLabel(lblDeg, ALLOC_LBL_R, r.name, ALLOC_LBL_FS, 'alloc-lbl-name' + c));
-      }
-    }
-    /* 超阈值标记：环外侧三角（不用红色——红色在本应用是"上涨"语义，3/5 扇区标红会误读） */
-    if (r.over && aDeg > 0) {
-      p.push('<path class="alloc-mk' + c + '" d="' + allocMarkerPath(100, 100, 95, wo + aDeg / 2) +
-        '" fill="#0f172a" fill-opacity="0.55"/>');
-    }
-    wi += wDeg; wo += aDeg;
+    acc += aDeg;
   });
   const center = A.totalMV > 0
-    ? '<text x="100" y="88" text-anchor="middle" font-size="11" font-weight="700" fill="#1f2430">¥' +
-      esc(fmtMoney(A.totalMV).replace(/\.\d\d$/, '')) + '</text>' +
-      '<text x="100" y="101" text-anchor="middle" font-size="7" fill="#7a8291">总市值</text>' +
-      '<text x="100" y="113" text-anchor="middle" font-size="7" fill="' + (A.overCount > 0 ? '#8a5a00' : '#7a8291') + '">' +
-      (A.overCount > 0 ? '⚠ ' + A.overCount + ' 只超阈值' : '全部在阈值内') + '</text>'
-    : '<text x="100" y="100" text-anchor="middle" font-size="8" fill="#7a8291">当前无持仓市值</text>';
-  return '<svg class="alloc-ring" viewBox="0 0 200 200" role="img" aria-label="资产配置双环偏差图">' +
+    ? '<text x="100" y="96" text-anchor="middle" font-size="13" font-weight="700" fill="var(--text)">¥' +
+      esc(fmtMoney(A.totalMV).replace(/\.\d\d$/, '')) + '</text>'
+    : '';
+  return '<svg class="alloc-ring" viewBox="0 0 200 200" role="img" aria-label="资产配置占比环图">' +
     p.join('') + center + '</svg>';
 }
-/* 环下「目标 vs 实际」对比列表（v0.21.1）：色块 + 名称 + 目标% + 实际%
-   渲染 A.rows 全明细（含被合并进「其他 N 只」的 <1% 计划外个股），避免这些个股在界面上
-   彻底消失 —— 合并块只留在环上，点该扇区仍可看其合计明细。零信息损失。
-   排序沿用 A.rows（= 环上顺序 w↓ → a↓ → code↑），顺时针读环时可逐行对上。 */
-function allocLegendHTML(A, sel) {
-  return '<div class="alloc-legend">' + A.rows.map(r => {
-    const isSel = sel != null && r.key === String(sel);
-    return '<button class="alloc-lg' + (isSel ? ' sel' : '') + '" data-k="' + esc(r.key) +
-      '" type="button">' +
-      '<i style="background:' + r.color + '"></i>' +
-      '<span class="nm">' + esc(r.name) + '</span>' +
-      '<span class="tgt num">目标 ' + r.w.toFixed(1) + '%</span>' +
-      '<span class="act num">实际 ' + r.a.toFixed(1) + '%</span></button>';
-  }).join('') + '</div>';
-}
-function allocSecRow(t) { return '<div class="alloc-dsec">' + t + '</div>'; }
-function allocDr(lbl, val, vcls) {
-  return '<div class="alloc-drow"><span class="l">' + lbl + '</span><span class="v num' +
-    (vcls ? ' ' + vcls : '') + '">' + val + '</span></div>';
-}
-function allocDetailHTML(A, row) {
-  if (!row) {
-    return '<div class="alloc-dph"><div class="ico">◔</div><div>点击环上任一扇区<br>或下方列表行<br>查看标的明细</div></div>';
-  }
-  if (row.merged) {
-    const n = row.members.length;
-    return '<div class="alloc-dhead"><span class="nm">' + esc(row.name) + '</span>' +
-      '<span class="muted">合计 · 市值占比 ' + row.a.toFixed(2) + '%</span>' +
-      '<button class="x" data-act="clear" type="button">×</button></div>' +
-      '<div class="alloc-dbody' + (row.over ? ' over' : '') + '">' +
-      allocSecRow('【现状】合计') +
-      allocDr('合计市值', '¥' + fmtMoney(row.mv)) +
-      allocDr('市值占比', row.a.toFixed(2) + '%') +
-      allocDr('合计偏离', (row.dev > 0 ? '+' : '') + row.dev.toFixed(2) + 'pp', cls(row.dev)) +
-      allocDr(row.devValue >= 0 ? '合计超配市值' : '合计欠配市值', '¥' + fmtSigned(row.devValue), cls(row.devValue)) +
-      allocDr('目标占比合计', row.w.toFixed(2) + '%') +
-      '</div>' +
-      '<div class="alloc-dfoot">各标的明细见下方列表，可逐个点选</div>';
-  }
-  const p = getActivePlan();
-  const tp = p ? timeProgress(p) : 0;
-  const tEnd = (p && p.totalTarget > 0) ? p.totalTarget * row.w / 100 : 0;
-  const tProg = tEnd * tp;
-  return '<div class="alloc-dhead"><span class="nm">' + esc(row.name) + '</span>' +
-    '<span class="code num">' + esc(row.code) + '</span>' +
-    (row.cleared ? '<span class="badge-cleared">已清仓</span>' : '') +
-    '<button class="x" data-act="clear" type="button">×</button></div>' +
-    '<div class="alloc-dbody' + (row.over ? ' over' : '') + '">' +
-    allocSecRow('【规划】期末目标 ' + (p && p.totalTarget > 0 ? '¥' + fmtMoney(p.totalTarget) : '未设置') +
-      ' · 时间进度 ' + (tp * 100).toFixed(0) + '%') +
-    allocDr('目标占比（期末）', row.w.toFixed(2) + '%') +
-    allocDr('目标金额（期末）', tEnd > 0 ? '¥' + fmtMoney(tEnd) : '--') +
-    allocDr('按进度应达', tEnd > 0 ? '¥' + fmtMoney(tProg) : '--') +
-    allocSecRow('【现状】总市值 ¥' + fmtMoney(A.totalMV) + ' · 总成本 ¥' + fmtMoney(A.rowsCost)) +
-    allocDr('当前市值', '¥' + fmtMoney(row.mv)) +
-    allocDr('市值占比', row.a.toFixed(2) + '%') +
-    allocDr('当前成本', row.cost > 0 ? '¥' + fmtMoney(row.cost) : '--') +
-    allocDr('成本占比', A.rowsCost > 0 ? row.costA.toFixed(2) + '%' : '--') +
-    allocDr('持仓收益率', row.rate != null ? fmtPct(row.rate) : '--', cls(row.rate)) +
-    allocSecRow('【偏离】市值口径 · 阈值 ±' + A.thr + 'pp') +
-    allocDr('偏离', (row.dev > 0 ? '+' : '') + row.dev.toFixed(2) + 'pp', cls(row.dev)) +
-    allocDr(row.devValue >= 0 ? '超配市值' : '欠配市值', '¥' + fmtSigned(row.devValue), cls(row.devValue)) +
-    allocDr(row.over ? (row.devValue > 0 ? '⚠ 建议减仓约' : '⚠ 建议补仓约') : '阈值内',
-      row.over ? '¥' + fmtMoney(Math.abs(row.devValue)) : '无需调整',
-      row.over ? '' : 'muted') +
-    '</div>' +
-    '<div class="alloc-dfoot">超/欠配市值 = 实际市值 − 目标占比×总市值（结构口径，合计恒为 ¥0.00）</div>';
+/* 标的明细表（v0.22.0）：6 列 = 标的 / 市值占比 / 偏离 / 当前市值 / 超配市值 / 超配成本。
+   行色块与环上扇区同色，环与表在同一视觉轴上（环在左、表在右），一一对应。
+   超阈值行的超配市值与超配成本转琥珀橙加粗（--warn）：本应用红色是"上涨"语义，
+   超配不是"涨"，用红色会被误读为利好。 */
+function allocTableHTML(A) {
+  const cell = (v, over) => '<td class="num' + (over ? ' ov' : '') + '">' + v + '</td>';
+  return '<div class="alloc-scroll"><table class="alloc-tbl"><thead><tr>' +
+    '<th class="c-name">标的</th><th>市值占比</th><th>偏离</th><th>当前市值</th>' +
+    '<th>超配市值</th><th>超配成本</th>' +
+    '</tr></thead><tbody>' +
+    A.rows.map(r =>
+      '<tr>' +
+      '<td class="c-name"><i style="background:' + r.color + '"></i>' +
+        '<span class="nm" title="' + esc(r.name + (r.code ? '（' + r.code + '）' : '')) + '">' + esc(r.name) + '</span>' +
+        (r.cleared ? '<span class="badge-cleared">已清仓</span>' : '') +
+        (r.isFund ? '<span class="tag-fund">场外</span>' : '') +
+        (r.outside ? '<span class="tag-out">计划外</span>' : '') +
+      '</td>' +
+      cell(r.a.toFixed(2) + '%', false) +
+      cell((r.dev > 0 ? '+' : '') + r.dev.toFixed(2) + 'pp', r.over) +
+      cell('¥' + fmtMoney(r.mv), false) +
+      cell('¥' + fmtSigned(r.devValue), r.over) +
+      cell('¥' + fmtSigned(r.overCost), r.over) +
+      '</tr>').join('') +
+    '</tbody></table></div>';
 }
 function renderAlloc() {
   const box = el('allocContent');
@@ -3161,43 +3086,14 @@ function renderAlloc() {
     box.innerHTML = '<div class="empty">尚无持仓与计划权重，暂无法计算配置偏差。</div>';
     return;
   }
-  const sel = allocSelId != null && A.rows.some(r => r.key === String(allocSelId)) ? String(allocSelId) : null;
-  if (sel == null) allocSelId = null;
   if (!(totalMV > 0)) {
-    box.innerHTML =
-      '<div class="alloc-summary"><span>期末目标 <b class="num" style="color:var(--text)">' +
-      (plan.totalTarget > 0 ? '¥' + fmtMoney(plan.totalTarget) : '未设置') + '</b></span>' +
-      '<span>总市值为 0，市值占比无法计算</span>' +
-      '<span>目标配置（计划权重）如下：</span></div>' +
-      '<div class="alloc-onlyw">' + A.rows.slice().sort((x, y) => y.w - x.w).map(r =>
-        '<div class="alloc-wrow"><i style="background:' + r.color + '"></i>' +
-        '<span class="nm">' + esc(r.name) + '</span>' +
-        '<span class="pc num">' + r.w.toFixed(2) + '%</span>' +
-        '<span class="muted">目标 ¥' + fmtMoney(plan.totalTarget * r.w / 100) + '</span></div>').join('') +
-      '</div>';
+    box.innerHTML = '<div class="empty">当前总市值为 0，市值占比无法计算。<br>市值口径的偏离与超配市值需要非零总市值才有意义。</div>';
     return;
   }
-  const row = sel ? A.rows.find(r => r.key === sel) : null;
   box.innerHTML =
-    '<div class="alloc-summary">' +
-    '<span>期末目标 <b class="num" style="color:var(--text)">' +
-    (plan.totalTarget > 0 ? '¥' + fmtMoney(plan.totalTarget) : '未设置') + '</b></span>' +
-    '<span>时间进度 <b style="color:var(--text)">' + (timeProgress(plan) * 100).toFixed(0) + '%</b></span>' +
-    '<span>总市值 <b class="num" style="color:var(--text)">¥' + fmtMoney(totalMV) + '</b></span>' +
-    '<span>超阈值 <b style="color:var(--text)">' + A.overCount + '</b> 只（阈值 ±' + A.thr + 'pp）</span>' +
-    /* 权重非 100% 属功能性告警（v0.21.0 原在底部列表头，v0.21.1 随该块删除后并入此处） */
-    (A.sumWErr > 0.5
-      ? '<span class="tag-out">⚠ 计划权重合计 ' + A.sumW.toFixed(2) + '%，非 100%</span>'
-      : '') +
-    '<span class="muted">内环＝目标配置（期末） · 外环＝当前市值占比</span>' +
-    '</div>' +
     '<div class="alloc-main">' +
-    '<div class="alloc-ringwrap">' + allocRingSVG(A, sel) + '<div id="allocTip" class="alloc-tip" hidden></div></div>' +
-    '<div class="alloc-dpanel" id="allocDetail">' + allocDetailHTML(A, row) + '</div>' +
-    '<div class="alloc-lgwrap">' + allocLegendHTML(A, sel) +
-    '<div class="alloc-hint">▶ = 超阈值（|偏离| &gt; ' + A.thr +
-    'pp）· 扇区越长占比越高 · 点扇区或下方列表行看明细</div>' +
-    '</div>' +
+    '<div class="alloc-ringwrap">' + allocRingSVG(A) + '</div>' +
+    allocTableHTML(A) +
     '</div>';
 }
 /* ===================== 定投参考（v0.9.0 · V4里程碑） =====================
@@ -3891,7 +3787,6 @@ function bindEvents() {
   bindKlineKeys();
   bindMonitorActions();
   bindHoldingsClick();
-  bindAllocClick();
   bindTxClick();
 
   initDragSort();
@@ -3986,57 +3881,6 @@ function bindHoldingsClick() {
     if (!card) return;
     openTradeOrAction(card.dataset.id, btn.dataset.act);
   });
-}
-/* 资产配置双环交互（v0.21.0）：扇区 / 图例 / 列表行 三入口点选同一标的，
-   再次点击同项或点空白取消；手机端点扇区后把明细滚入视野 */
-function bindAllocClick() {
-  const box = el('allocContent');
-  if (!box) return;
-  function select(k) {
-    allocSelId = (k != null && String(k) === String(allocSelId)) ? null : (k == null ? null : String(k));
-    renderAlloc();
-  }
-  box.addEventListener('click', e => {
-    const x = e.target.closest('.alloc-dhead .x[data-act="clear"]');
-    if (x) { select(null); return; }
-    const sec = e.target.closest('.alloc-sec[data-k]');
-    if (sec) { select(sec.dataset.k); return; }
-    const lg = e.target.closest('.alloc-lg[data-k]');
-    if (lg) { select(lg.dataset.k); return; }
-    if (e.target.closest('.alloc-ringwrap')) { select(null); return; }
-  });
-  /* v0.21.1：不再做任何 scrollIntoView 跳转（明细面板在手机上已排在列表上方）。
-     keydown 委托也一并删除 —— 列表是原生 <button type="button">，Enter/Space 由浏览器
-     自动派发 click，键盘可达性由平台保证。 */
-  /* 桌面端悬停 tooltip：一次只挂一个监听，renderAlloc 后自动失效 */
-  box.addEventListener('mouseover', e => {
-    if (mqMobile.matches) return;
-    const sec = e.target.closest('.alloc-sec[data-k]');
-    const tip = el('allocTip');
-    if (!tip) return;
-    if (!sec) { tip.hidden = true; return; }
-    const plan = getActivePlan();
-    if (!plan) return;
-    const A = allocRows(plan, totalMarketValue());
-    let r = A.rows.find(x => x.key === String(sec.dataset.k));
-    if (!r) r = allocRingRows(A.rows).find(x => x.key === String(sec.dataset.k)) || null;
-    if (!r) { tip.hidden = true; return; }
-    tip.innerHTML = '<b>' + esc(r.name) + '</b>' + (r.code ? ' <span class="muted">' + esc(r.code) + '</span>' : '') +
-      '<div class="r"><span>目标占比（期末）</span><span class="n">' + r.w.toFixed(2) + '%</span></div>' +
-      '<div class="r"><span>市值占比</span><span class="n">' + r.a.toFixed(2) + '%</span></div>' +
-      '<div class="r"><span>偏离</span><span class="n ' + cls(r.dev) + '">' + (r.dev > 0 ? '+' : '') + r.dev.toFixed(2) + 'pp</span></div>' +
-      '<div class="r"><span>' + (r.devValue >= 0 ? '超配市值' : '欠配市值') + '</span><span class="n ' + cls(r.devValue) + '">¥' + fmtSigned(r.devValue) + '</span></div>' +
-      '<div class="r"><span>当前市值</span><span class="n">¥' + fmtMoney(r.mv) + '</span></div>';
-    tip.hidden = false;
-    const wrap = tip.parentNode.getBoundingClientRect();
-    let x = e.clientX - wrap.left + 14;
-    let y = e.clientY - wrap.top + 14;
-    if (x + tip.offsetWidth > wrap.width) x = Math.max(0, e.clientX - wrap.left - tip.offsetWidth - 14);
-    if (y + tip.offsetHeight > wrap.height) y = Math.max(0, e.clientY - wrap.top - tip.offsetHeight - 14);
-    tip.style.left = x + 'px';
-    tip.style.top = y + 'px';
-  });
-  box.addEventListener('mouseleave', () => { const tip = el('allocTip'); if (tip) tip.hidden = true; });
 }
 function bindTxClick() {
   el('txBody').addEventListener('click', e => {
