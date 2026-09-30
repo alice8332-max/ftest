@@ -2655,48 +2655,87 @@ function openEditFundModal(id) {
   };
 }
 
-/* ===================== 定投进度图表（v0.22.0） =====================
-   卡片墙 → 单张 SVG 柱状图。每根柱占一个 x 槽位，槽内上下堆叠：成本从 0 向上，
-   盈利段接在成本柱顶端（柱顶=市值），亏损段从 0 向下、与成本柱分离。
-   期末目标（黑粗线）与按时间进度应投（橙线）作为标尺横穿全图。
-   上下双带、各自独立刻度（v0.22.1 修复「盈亏柱恒为一点点」）：
-     上带「成本·目标」= 成本柱 + 期末目标黑线 + 按进度应投橙线，量程 max(成本, 目标, 应投)；
-     下带「盈亏」= 红/绿盈亏柱，量程 max|盈亏|，以带内中线为 0。
-   为什么必须分带：单轴线性堆叠在数学上无法让盈亏可读——盈亏只有成本的 10% 时，
-   柱高就必然只有 10%（计划外标的比例常低到 1%，实测仅 0.7px，等于没画）。
-   且「期末目标」天然远高于当前市值，若让它进主量程，成本柱本身也会被压扁
-   （实测 目标 30 万 / 市值 22 万 ⇒ 成本柱从 182px 掉到 67px）。
-   分带后两把尺子各自贴在带标签上，不共用刻度，不产生「谁更高」的误读。
-   全部量程由数据推导、零硬编码；两带都只画场内标的，顺序沿用 sortedHoldings()
+/* ===================== 定投进度图表（v0.23.0 单轴等比） =====================
+   卡片墙 → 单张 SVG 柱状图。**一根 0 轴、**一把尺子**——v0.22.x 的上下双带
+   （DCA_COST_BAND / NEG_FRAC）已全部删除，勿再复活。
+
+   【柱结构】每根柱占一个 x 槽位，单列堆叠：
+     蓝段  0 轴向上          = 成本
+     红段  接在蓝段顶端      = 盈利，柱顶 = 成本+盈利 = 市值
+     绿段  **紧贴 0 轴向下** = 亏损，与蓝段不纵向重叠
+   措辞纪律：蓝段下边缘 ＝ 绿段上边缘 ＝ 0 轴，三者落在同一个 y 上。
+     ❌ 不要写成「绿段不与成本柱相接」——会被读成「和 0 轴之间有空隙」；
+     ❌ 也不是瀑布式（绿段挂在蓝段下边缘向下穿 0 轴）——那样负区间恒为 0。
+
+   【一把尺子（用户硬要求）】任何金额的像素高度 = 金额 × 同一个 unit，正负通用：
+     unit = plotH/(upSpan+dnSpan);  zeroY = plotTop + upSpan*unit;  y(v) = zeroY - v*unit
+   ⇒ |y(5000)-zeroY| ≡ |y(-5000)-zeroY|，用户看柱高即知亏了多少钱。
+   v0.22.0 用 NEG_FRAC 独立决定正负区高度，实测两侧 px/元 相差 10.4 倍，
+   造成「体感以为亏很多/很少」——这是本版要根除的错误。
+   0 轴位置**纯由数据决定，不居中**：亏损少时负区间自然很矮、0 轴贴近底部。
+
+   【边界与辅助线】上边界 = max(所有柱顶, 期末目标黑线) 就近上取整；下边界 = 最大亏损额
+   就近下取整。边界由 dcaBoundary() 取「浪费高度最少、线数≤4、宁可少」的整齐数决定，
+   边界本身就是最外侧那根带金额标签的虚线辅助线。线数不影响任何柱高。
+
+   【4px 保底】任何柱段不足 4px 一律画 4px（成本/红/绿统一，红绿对称触发）。
+   这是**唯一被批准**的比例失真例外，其余一切比例严格等比。
+
+   全部量程由数据推导、零硬编码；只画场内标的，顺序沿用 sortedHoldings()
    的 order 拖拽序；计划外 w=0 保留一列且**照常画盈亏柱**，只是不画标尺线
-   （缺线本身就是「不在计划内」的信号）。
+   （缺线本身就是「不在计划内」的信号）。场外基金不入图（用户已确认）。
    数据全部取自现有对象（shares/avgCost/posPL/plan.weights），零新增请求、零结构变更。
-   方案见 0930_03_修改方案_定投进度与资产配置双Tab重构v0.22.0.md §2.2 / §3.2
+   方案见 0930_05_修改方案_定投进度单轴等比v0.23.0.md
    ======================================================================== */
 const DCA_COL_W = 104;    /* 每根柱的列宽(px)，也是手机端横向滚动的最小单位 */
-const DCA_BAR_MAX = 64;   /* 柱宽上限；实际取 min(此值, 列宽×0.46)，见方案 §三「柱宽 min(64, 列宽×0.46)」 */
+const DCA_BAR_MAX = 64;   /* 柱宽上限；实际取 min(此值, 列宽×0.46) */
 const DCA_MIN_W = 640;    /* 图表最小总宽：标的少时也不塌成一条窄带，多余部分留白 */
-const DCA_H = 320;
+const DCA_H = 360;        /* 320→360：绘图区 202→242px，等比放大 20%，不改变任何金额关系 */
 const DCA_PAD_L = 92;     /* 左侧刻度留白：够放 "−¥10,000" */
 const DCA_PAD_R = 24;
 const DCA_PAD_T = 30;
 const DCA_PAD_B = 88;     /* 底部 4 行文字(名称/盈亏/收益率/超配成本) */
-const DCA_COST_BAND = 0.48; /* 上带「成本·目标」占绘图区高度比例；剩下给盈亏带 */
-const DCA_BAND_GAP = 20;    /* 两带之间的空隙：够放「盈亏」带标签，不与刻度打架 */
 const DCA_EPS = 0.005;    /* 金额判定容差，与旧卡片一致 */
+const DCA_MIN_SEG = 4;    /* 任何柱段的最低可见高度(px)；不足则按 4px 画，红绿对称 */
+const DCA_MIN_LINE_GAP = 6; /* 负侧辅助线距 0 轴不足此值就不画（两条线会糊成一条） */
+const DCA_LINE_CAP = 4;   /* 每侧辅助线根数上限：「少于 5 根」 */
+const DCA_LINE_TIE = 'few';  /* 'few'=宁可少不要多（默认）| 'many'=同等不浪费高度时多画 */
+const DCA_DASH = '4 3';    /* 辅助线/橙线虚线节奏 */
 
-/* 向上取整到 1/2/2.5/5/10 × 10^n 的整齐刻度；v<=0 兜底为 1 */
-function dcaNiceStep(v) {
-  v = Number(v) || 0;
-  if (!(v > 0)) return 1;
-  const e = Math.pow(10, Math.floor(Math.log10(v)));
-  const M = [1, 2, 2.5, 5, 10];
-  for (let i = 0; i < M.length; i++) if (v <= M[i] * e + 1e-9) return M[i] * e;
-  return 10 * e;
+/* 边界 = step × lines：step 取 1/1.5/2/2.5/3/4/5/6/8/10 × 10^k，lines ∈ [minLines, maxLines]。
+   选择顺序写死：① 浪费高度最少（step*lines − raw）② 线更少（step 更大）③ step 更大。
+   边界就是最外侧那根辅助线，故须 ≥ raw；返回 span 即该侧量程。raw<=0 兜底为 0。 */
+function dcaBoundary(raw, minLines, maxLines) {
+  const mx = Number(raw) || 0;
+  if (!(mx > 0)) return { step: 0, lines: 0, span: 0, waste: 0 };
+  const MANT = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
+  const e0 = Math.ceil(Math.log10(mx));
+  let best = null;
+  for (let k = e0; k >= e0 - 3; k--) {
+    for (let i = 0; i < MANT.length; i++) {
+      const step = MANT[i] * Math.pow(10, k);
+      if (!(step > 0)) continue;
+      const lines = Math.max(minLines, Math.ceil(mx / step - 1e-9));
+      if (lines > maxLines) continue;
+      const span = step * lines;
+      const waste = span - mx;
+      if (!best) { best = { step: step, lines: lines, span: span, waste: waste }; continue; }
+      const tie = DCA_LINE_TIE === 'many'
+        ? (lines > best.lines ? -1 : lines < best.lines ? 1 : 0)
+        : (step > best.step ? -1 : step < best.step ? 1 : 0);
+      const byWaste = waste < best.waste - 1e-9 ? -1 : waste > best.waste + 1e-9 ? 1 : 0;
+      if (byWaste < 0 || (byWaste === 0 && tie < 0)
+        || (byWaste === 0 && tie === 0 && step > best.step)) {
+        best = { step: step, lines: lines, span: span, waste: waste };
+      }
+    }
+  }
+  return best || { step: mx, lines: 1, span: mx, waste: 0 };
 }
-/* 刻度金额：整数不带小数，否则两位；负号用 U+2212 减号（与正文一致） */
+/* 刻度金额：整数不带小数，否则两位；负号用 U+2212 减号（与正文一致）；0 不带 ¥ */
 function dcaTick(v) {
   const n = Number(v) || 0, a = Math.abs(n);
+  if (Math.abs(n) < 1e-9) return '0';
   const body = Number.isInteger(a) ? a.toLocaleString('zh-CN')
     : a.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return (n < 0 ? '\u2212¥' : '¥') + body;
@@ -2732,70 +2771,71 @@ function dcaChartSVG(rows) {
   const barW = Math.min(DCA_BAR_MAX, colW * 0.46);
   const x0 = DCA_PAD_L, x1 = W - DCA_PAD_R;
 
-  /* ---- 双带几何：上带成本·目标，下带盈亏，两把尺子互不干扰 ---- */
-  const costBandH = plotH * DCA_COST_BAND;
-  const costTop = plotTop, costBot = plotTop + costBandH;
-  const plTop = costBot + DCA_BAND_GAP, plBot = plotBot;
-  const plBandH = plBot - plTop;
-  const plZeroY = plTop + plBandH / 2;
-
-  /* 上带量程：成本与目标必须同尺，否则「离目标还差多少」没法目测 */
-  let costMax = 0, plMax = 0;
+  /* ---- 单轴几何：一把尺子，没有 NEG_FRAC / 双带 / 任何自由比例 ---- */
+  /* 上边界原始值 = max(所有柱顶, 期末目标黑线)；柱顶含盈利段（成本+盈利=市值），
+     亏损标的柱顶就是成本（绿段在 0 轴以下不占正区间）。
+     下边界原始值 = 最大亏损额（绿段从 0 轴向下，负区间必须能容纳它）。 */
+  let rawUp = 0, rawDn = 0;
   rows.forEach(x => {
-    costMax = Math.max(costMax, x.cost, x.targetAbs, x.should);
-    plMax = Math.max(plMax, Math.abs(x.pl));
+    if (x.hasPlan) rawUp = Math.max(rawUp, x.targetAbs, x.should);
+    rawUp = Math.max(rawUp, x.cost + Math.max(x.pl, 0));
+    rawDn = Math.max(rawDn, -Math.min(x.pl, 0));
   });
-  costMax = costMax > 0 ? costMax : 1;
-  plMax = plMax > 0 ? plMax : 1;
-  /* 刻度都向上取整到整齐值：costStep 保证最外侧线在带内，plStep 同理。
-     盈亏带用 /3 而不是 /2：niceStep 会向上取整得比较粗（30000/2=15000→20000，
-     量程虚涨到 40000，白浪费 25% 带高），/3 能让最大盈亏基本顶满带高。 */
-  const costStep = dcaNiceStep(costMax / 3);
-  const costDivs = Math.max(1, Math.ceil(costMax / costStep - 1e-9));
-  const costSpan = costStep * costDivs;
-  const plStep = dcaNiceStep(plMax / 3);
-  const plDivs = Math.max(1, Math.ceil(plMax / plStep - 1e-9));
-  const plSpan = plStep * plDivs;
-
-  const yCost = v => costBot - (v / costSpan) * costBandH;
-  const yPl = v => plZeroY - (v / plSpan) * (plBandH / 2);
+  const up = dcaBoundary(rawUp, 1, DCA_LINE_CAP);
+  const dn = dcaBoundary(rawDn, 1, DCA_LINE_CAP);
+  const span = (up.span + dn.span) || 1;          /* 全空数据兜底，防除零 */
+  const unit = plotH / span;                      /* ← 全图唯一 px/元 */
+  const zeroY = plotTop + up.span * unit;         /* ← 纯由数据决定，不居中 */
+  const y = v => zeroY - v * unit;                /* ← 唯一公式，v 取正负通用 */
 
   const s = [];
   s.push('<svg class="dca-svg" xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + DCA_H +
     '" viewBox="0 0 ' + W + ' ' + DCA_H + '" role="img" aria-label="定投进度柱状图">' +
     '<rect x="0" y="0" width="' + W + '" height="' + DCA_H + '" fill="var(--card)"/>');
 
-  /* 网格线 + 左侧金额标签，两带各一套 */
+  /* 辅助线（虚线）+ 左侧金额标签，正负两侧各一套；边界就是最外侧那根线。
+     边界守卫用闭区间(±1px)：最外侧线按构造正好落在边沿，开区间会把它裁掉。 */
   const gl = yy => '<line x1="' + x0 + '" y1="' + yy.toFixed(1) + '" x2="' + x1 +
-    '" y2="' + yy.toFixed(1) + '" stroke="var(--line)" stroke-width="1"/>';
+    '" y2="' + yy.toFixed(1) + '" stroke="var(--line)" stroke-width="1" stroke-dasharray="' + DCA_DASH + '"/>';
   const al = (v, yy) => '<text x="' + (x0 - 8) + '" y="' + (yy + 3.5).toFixed(1) +
     '" text-anchor="end" font-size="10.5" fill="var(--muted)">' + dcaTick(v) + '</text>';
-  for (let i = 1; i <= costDivs; i++) { const yy = yCost(costStep * i); if (yy >= costTop - 1) s.push(gl(yy)); }
-  for (let i = 1; i <= plDivs; i++) {
-    const v = plStep * i;
-    for (const sg of [1, -1]) { const yy = yPl(sg * v); if (yy >= plTop - 1 && yy <= plBot + 1) s.push(gl(yy)); }
+  const upLines = [], dnLines = [];
+  for (let i = 1; i <= up.lines; i++) {
+    const v = up.step * i, yy = y(v);
+    if (yy >= plotTop - 1 && yy <= plotBot + 1) { upLines.push([v, yy]); }
   }
-  /* 两带的 0 轴都单独加粗：上带底沿 = 成本 0，下带中线 = 盈亏 0 */
-  s.push('<line x1="' + x0 + '" y1="' + costBot.toFixed(1) + '" x2="' + x1 + '" y2="' + costBot.toFixed(1) +
-    '" stroke="var(--text)" stroke-width="1.6"/>');
-  s.push('<line x1="' + x0 + '" y1="' + plZeroY.toFixed(1) + '" x2="' + x1 + '" y2="' + plZeroY.toFixed(1) +
-    '" stroke="var(--text)" stroke-width="1.6"/>');
-  for (let i = 1; i <= costDivs; i++) { const yy = yCost(costStep * i); if (yy >= costTop - 1) s.push(al(costStep * i, yy)); }
-  for (let i = 1; i <= plDivs; i++) {
-    const v = plStep * i;
-    for (const sg of [1, -1]) { const yy = yPl(sg * v); if (yy >= plTop - 1 && yy <= plBot + 1) s.push(al(sg * v, yy)); }
+  for (let i = 1; i <= dn.lines; i++) {
+    const v = -dn.step * i, yy = y(v);
+    /* 负侧第一根线离 0 轴太近会糊在 0 轴上，误导读数，直接省略（金额由柱下文字承担） */
+    if (yy - zeroY < DCA_MIN_LINE_GAP) continue;
+    if (yy <= plotBot + 1) dnLines.push([v, yy]);
   }
-  s.push(al(costSpan, costTop) + al(0, costBot) + al(plSpan, plTop) + al(0, plZeroY));
-  /* 带标签：两把尺子不是同一把，必须写明，否则会被读成同一量程 */
-  const bandLbl = (t, yy) => '<text x="' + (x0 - 8) + '" y="' + (yy - 5).toFixed(1) +
-    '" text-anchor="end" font-size="9.5" font-weight="700" fill="var(--muted)">' + t + '</text>';
-  s.push(bandLbl('成本·目标', costTop + 9) + bandLbl('盈亏', plTop - 5));
+  upLines.forEach(g => s.push(gl(g[1])));
+  dnLines.forEach(g => s.push(gl(g[1])));
+  /* 唯一一根 0 轴：蓝柱下边缘 ＝ 绿段上边缘 ＝ 这条线 */
+  s.push('<line x1="' + x0 + '" y1="' + zeroY.toFixed(1) + '" x2="' + x1 + '" y2="' + zeroY.toFixed(1) +
+    '" stroke="var(--text)" stroke-width="1.6"/>');
+  upLines.forEach(g => s.push(al(g[0], g[1])));
+  dnLines.forEach(g => s.push(al(g[0], g[1])));
+  s.push(al(0, zeroY));
+
+  /* 柱段高度：等比优先；不足 DCA_MIN_SEG 才保底 4px。
+     保底值同时被所在区间的实际高度夹住——否则区间本身不足 4px 时柱子会画出绘图区
+     （极端例：上边界 30 万、最大亏损仅 490 元 ⇒ 负区只有 0.4px）。
+     夹住后「同额同高」依然成立：保底值只取决于几何，与金额无关。 */
+  const segH = amt => {
+    const raw = Math.abs(amt) * unit;
+    if (raw >= DCA_MIN_SEG) return raw;
+    return Math.min(DCA_MIN_SEG, zeroY - plotTop, plotBot - zeroY);
+  };
 
   /* ---- 柱体 + 标尺线 + 轴下文字 ---- */
   const TXT = 'font-size="10.5" text-anchor="middle"';
   rows.forEach((x, i) => {
     const cx = x0 + colW * (i + 0.5);
     const bx = cx - barW / 2;
+    const bar = (fill, top, h) => '<rect x="' + bx.toFixed(1) + '" y="' + top.toFixed(1) +
+      '" width="' + barW.toFixed(1) + '" height="' + h.toFixed(1) + '" fill="' + fill + '" rx="2"/>';
     s.push('<g class="dca-col">');
     s.push('<title>' + esc(x.name + (x.code ? '（' + x.code + '）' : '') +
       '　成本 ¥' + fmtMoney(x.cost) + '　市值 ¥' + fmtMoney(x.mv) +
@@ -2803,29 +2843,25 @@ function dcaChartSVG(rows) {
       '　' + (x.pct != null ? fmtPct(x.pct) : '') +
       '　' + (x.hasPlan ? '期末目标 ¥' + fmtMoney(x.targetAbs) + '　按进度应投 ¥' + fmtMoney(x.should) : '未纳入定投计划')) +
       '</title>');
-    if (x.cost > 0) {
-      const h = costBot - yCost(x.cost);
-      s.push('<rect x="' + bx.toFixed(1) + '" y="' + yCost(x.cost).toFixed(1) + '" width="' + barW.toFixed(1) +
-        '" height="' + Math.max(0, h).toFixed(1) + '" fill="var(--dca-cost)" rx="2"/>');
-    }
-    /* 盈亏柱在下带，量程独立：计划外标的（w=0）也照常画，
-       不再因为「目标远高于市值」而被压成 0.7px 的 invisible sliver */
+    /* 蓝段：0 轴向上。柱顶 = y(cost)，是红段的落脚点 */
+    const hCost = x.cost > 0 ? segH(x.cost) : 0;
+    const costTop = zeroY - hCost;
+    if (hCost > 0) s.push(bar('var(--dca-cost)', costTop, hCost));
+    /* 红段：接在**已渲染的**蓝段顶端（柱顶=市值），保底时也严丝合缝 */
     if (x.pl > DCA_EPS) {
-      const h = plZeroY - yPl(x.pl);
-      s.push('<rect x="' + bx.toFixed(1) + '" y="' + yPl(x.pl).toFixed(1) + '" width="' + barW.toFixed(1) +
-        '" height="' + Math.max(0, h).toFixed(1) + '" fill="var(--up)" rx="2"/>');
+      const h = segH(x.pl);
+      s.push(bar('var(--up)', costTop - h, h));
     } else if (x.pl < -DCA_EPS) {
-      const h = yPl(x.pl) - plZeroY;
-      s.push('<rect x="' + bx.toFixed(1) + '" y="' + plZeroY.toFixed(1) + '" width="' + barW.toFixed(1) +
-        '" height="' + Math.max(0, h).toFixed(1) + '" fill="var(--down)" rx="2"/>');
+      /* 绿段：上边缘紧贴 0 轴，与蓝段下边缘同一个 y */
+      s.push(bar('var(--down)', zeroY, segH(x.pl)));
     }
     if (x.hasPlan) {
       const h1 = barW / 2 + 8;
-      const yt = yCost(x.targetAbs), ys = yCost(x.should);
+      const yt = y(x.targetAbs), ys = y(x.should);
       s.push('<line x1="' + (cx - h1).toFixed(1) + '" y1="' + yt.toFixed(1) + '" x2="' + (cx + h1).toFixed(1) +
         '" y2="' + yt.toFixed(1) + '" stroke="var(--text)" stroke-width="2.4"/>');
       s.push('<line x1="' + (cx - h1).toFixed(1) + '" y1="' + ys.toFixed(1) + '" x2="' + (cx + h1).toFixed(1) +
-        '" y2="' + ys.toFixed(1) + '" stroke="var(--warn)" stroke-width="2" stroke-dasharray="4 2"/>');
+        '" y2="' + ys.toFixed(1) + '" stroke="var(--warn)" stroke-width="2" stroke-dasharray="' + DCA_DASH + '"/>');
     }
     const nm = String(x.name || '');
     s.push('<text x="' + cx.toFixed(1) + '" y="' + (plotBot + 18) + '" ' + TXT + ' font-weight="600" fill="var(--text)">' +
@@ -2872,7 +2908,7 @@ function renderPlan() {
           '<span class="lg"><i style="background:var(--down)"></i>亏损</span>' +
           '<span class="lg"><i class="ln" style="background:var(--text)"></i>期末目标</span>' +
           '<span class="lg"><i class="ln" style="background:var(--warn)"></i>按进度应投</span>' +
-          '<span class="lg muted-note">柱顶＝市值 · 无标尺线＝未纳入计划</span>' +
+          '<span class="lg muted-note">柱顶＝市值 · 绿段紧贴0轴向下 · 上下同一比例 · 无标尺线＝未纳入计划</span>' +
         '</div>' +
         '<div class="dca-scroll">' + dcaChartSVG(rows) + '</div>'
       : '<div class="empty" style="padding:26px 0">暂无可展示的场内标的</div>');
