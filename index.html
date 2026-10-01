@@ -272,9 +272,9 @@ body{
 .alloc-tbl.has-sel tbody .alloc-row.on{opacity:1;background:var(--hover,rgba(37,99,235,.10));font-weight:600}
 /* ---------- 资产配置·手机端（v0.25.0）：顶部标的导航 + 环 + 右侧竖排信息 ---------- */
 .alloc-mob{display:none}
-.alloc-nav{display:flex;gap:6px;overflow-x:auto;white-space:nowrap;padding:2px 0 10px;-webkit-overflow-scrolling:touch}
-.alloc-nav::-webkit-scrollbar{height:0}
-.alloc-chip{flex:none;font-size:13px;line-height:1;color:var(--muted);border:1px solid var(--line);background:var(--card);border-radius:999px;padding:9px 13px;cursor:pointer;white-space:nowrap;user-select:none;-webkit-user-select:none}
+/* v0.25.1：一行放不下自动排到第二/三行，不再横向拖动；尺寸对齐 .kli-navchip */
+.alloc-nav{display:flex;flex-wrap:wrap;gap:6px;padding:2px 0 10px}
+.alloc-chip{flex:none;font-size:12.5px;line-height:1;color:var(--muted);border:1px solid var(--line);background:var(--card);border-radius:999px;padding:5px 12px;cursor:pointer;white-space:nowrap;user-select:none;-webkit-user-select:none}
 .alloc-chip.on{color:#fff;background:var(--accent);border-color:var(--accent);font-weight:600}
 .alloc-chip:hover:not(.on){border-color:var(--accent);color:var(--accent)}
 .alloc-mob-body{display:flex;align-items:flex-start;gap:14px}
@@ -286,10 +286,12 @@ body{
 .alloc-info .k{color:var(--muted);flex:none;min-width:72px}
 .alloc-info .v{font-weight:600;font-variant-numeric:tabular-nums;word-break:break-all}
 .alloc-info .li-head{align-items:center;padding-top:0}
-.alloc-info .li-head .v{font-size:15px}
+/* v0.25.1：场外/计划外/已清仓 标签移到「标的」行之上，单独一行左对齐 */
+.alloc-info .li-tags{display:flex;gap:6px;flex-wrap:wrap;padding:2px 0 8px;border-bottom:0}
 .alloc-info .v.ov{color:var(--warn)}
 .alloc-info .swatch{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:middle}
 .alloc-info .tag-out,.alloc-info .tag-fund,.alloc-info .badge-cleared{font-size:11px;padding:1px 7px;border-radius:999px;margin-left:6px}
+.alloc-info .li-tags .tag-out,.alloc-info .li-tags .tag-fund,.alloc-info .li-tags .badge-cleared{margin-left:0}
 .alloc-info .tag-out{color:var(--muted);background:var(--card2)}
 .alloc-info .badge-cleared{color:var(--muted);background:var(--card2)}
 #toast{
@@ -317,8 +319,8 @@ body{
 /* ===== 行情K线（v0.18.0）===== */
 .kline-grid{display:flex;flex-wrap:wrap;gap:14px}
 /* ===== 行情K线·导航与单卡舞台（v0.18.0）===== */
-.kline-nav{display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:6px;-webkit-overflow-scrolling:touch}
-.kline-nav::-webkit-scrollbar{height:0}
+/* v0.25.1：与 .alloc-nav 一样改为自动换行，不再横向拖动 */
+.kline-nav{display:flex;flex-wrap:wrap;gap:6px;padding-bottom:8px;margin-bottom:6px}
 .kli-navchip{flex:none;font-size:12.5px;color:var(--muted);border:1px solid var(--line);background:var(--card);border-radius:999px;padding:5px 12px;cursor:pointer;white-space:nowrap;user-select:none;-webkit-user-select:none}
 .kli-navchip.active{color:#fff;background:var(--accent);border-color:var(--accent);font-weight:600}
 .kli-navchip:hover:not(.active){border-color:var(--accent);color:var(--accent)}
@@ -533,6 +535,9 @@ body{
   .mac-row{font-size:9.5px}
   .kline-nav{gap:5px;padding-bottom:6px}
   .kli-navchip{font-size:11.5px;padding:4px 10px}
+  /* v0.25.1：资产配置导航与 K 线导航同尺寸（换行显示） */
+  .alloc-nav{gap:5px;padding:2px 0 8px}
+  .alloc-chip{font-size:11.5px;padding:4px 10px}
   .kline-hero-wrap>.kline-arrow{display:none}
 }
 </style>
@@ -2729,7 +2734,8 @@ function openEditFundModal(id) {
 数据全部取自现有对象（shares/avgCost/posPL/plan.weights），零新增请求、零结构变更。
    方案见 0930_05_修改方案_定投进度单轴等比v0.23.0.md；
    v0.24.0 的标签体系与手机端自适应见 0930_06_修改方案_定投标签与手机自适应v0.24.0.md；
-   v0.25.0 的按需底板、图例下移与资产配置移动端重构见 0930_07_修改方案_定投图调整与资产配置手机端重构v0.25.0.md
+      v0.25.1 定投标签配色 / 两处导航换行 / 手机端信息栏 1001_01_修改方案_定投标签配色与导航换行及资产配置手机端v0.25.1.md
+   v0.25.0 定投图调整与资产配置手机端重构 0930_07_修改方案_定投图调整与资产配置手机端重构v0.25.0.md
 
    ---- v0.24.0 铁律：绘图区高度恒为 242px ----
    DCA_H / DCA_PAD_T / DCA_PAD_B 三者只能以「plotH = DCA_H − DCA_PAD_T − DCA_PAD_B
@@ -2933,7 +2939,10 @@ function dcaChartSVG(rows) {
     for (let i = 0; i < gridYs.length; i++) if (gridYs[i] >= lo && gridYs[i] <= hi) return true;
     return false;
   };
-  const chip = (cx, top, txts, drawBg) => {
+  /* chip：txts 多行文字；drawBg 为真才画不透明底板（v0.25.0 起按需）；
+   color 缺省 muted，橙线下方那组「超配/欠投/达标」显式传 var(--warn)，
+   使其与橙线同色——灰字压在蓝柱上读不清（v0.25.1）。 */
+  const chip = (cx, top, txts, drawBg, color) => {
     const w = chipW(txts);
     const h = txts.length * DCA_LABEL_ROW_H;
     let out = '';
@@ -2944,7 +2953,7 @@ function dcaChartSVG(rows) {
     txts.forEach((t, i) => {
       out += '<text class="dca-lb" x="' + cx.toFixed(1) + '" y="' +
         (top + i * DCA_LABEL_ROW_H + DCA_LABEL_ROW_H - 4.5).toFixed(1) +
-        '" text-anchor="middle" font-size="' + labelFont + '" fill="var(--muted)">' + esc(t) + '</text>';
+        '" text-anchor="middle" font-size="' + labelFont + '" fill="' + (color || 'var(--muted)') + '">' + esc(t) + '</text>';
     });
     return out;
   };
@@ -3019,11 +3028,12 @@ function dcaChartSVG(rows) {
       const topT = yt - DCA_LABEL_GAP - R * DCA_LABEL_ROW_H;
       s.push(chip(cx, topT, txtsT, crossedByGrid(topT, R * DCA_LABEL_ROW_H)));
       /* 橙线下方标签：必须完整落在「橙线 ~ 0 轴」之间，不够则整块不画。
-         v0.25.0：永不画底板（欠投时底板会遮掉橙线到柱顶这段距离感）。 */
+         v0.25.0：永不画底板（欠投时底板会遮掉橙线到柱顶这段距离感）。
+         v0.25.1：文字与橙线同色（var(--warn)），灰字压在蓝色成本柱上读不清。 */
       if (zeroY - ys >= DCA_MIN_LABEL_ROOM) {
         const oc = x.overCost;
         s.push(chip(cx, ys + DCA_LABEL_GAP,
-          [oc > DCA_EPS ? '超配 ' + amt(oc) : oc < -DCA_EPS ? '欠投 ' + amt(-oc) : '达标'], false));
+          [oc > DCA_EPS ? '超配 ' + amt(oc) : oc < -DCA_EPS ? '欠投 ' + amt(-oc) : '达标'], false, 'var(--warn)'));
       }
     } else {
       /* 计划外：无标尺线，标签锚在**已渲染的**柱顶（保底触发时不能用 y(cost)，会陷进柱子里）。
@@ -3374,8 +3384,8 @@ function allocAllInfoHTML(A) {
     row('时间进度', (A.tp * 100).toFixed(2) + '%') +
     row('超配/欠配成本', allocSign(sumOverCost), sumOverCost > 0 ? 'ov' : '');
 }
-/* 单只标的竖排信息：标的(色块+名称) / 市值占比 / 偏离 / 当前市值 / 超配市值 / 超配成本，
-   场外·计划外·已清仓在选中时于「标的」行以角标显示。 */
+/* 单只标的竖排信息：场外·计划外·已清仓 标签独立成行置顶（v0.25.1），
+   其下 标的(色块+名称，不含数字编号) / 市值占比 / 偏离 / 当前市值 / 超配市值 / 超配成本。 */
 function allocOneInfoHTML(r) {
   if (!r) return '';
   const tags = (r.cleared ? '<span class="badge-cleared">已清仓</span>' : '') +
@@ -3383,9 +3393,12 @@ function allocOneInfoHTML(r) {
     (r.outside ? '<span class="tag-out">计划外</span>' : '');
   const row = (k, v, cls) => '<div class="li"><span class="k">' + k + '</span><span class="v' +
     (cls ? ' ' + cls : '') + '">' + v + '</span></div>';
-  return '<div class="li li-head"><span class="k">标的</span><span class="v">' +
-      '<i class="swatch" style="background:' + r.color + '"></i>' + esc(r.name) +
-      (r.code ? '<span class="muted">（' + esc(r.code) + '）</span>' : '') + tags + '</span></div>' +
+  /* v0.25.1：标签（场外/计划外/已清仓）单独一行放在最上面；
+     「标的」行只留 色块 + 名称，不再显示数字编号，字号与其余各行一致（继承 .alloc-info）。 */
+  const tagRow = tags ? '<div class="li li-tags">' + tags + '</div>' : '';
+  return tagRow +
+    '<div class="li li-head"><span class="k">标的</span><span class="v">' +
+      '<i class="swatch" style="background:' + r.color + '"></i>' + esc(r.name) + '</span></div>' +
     row('市值占比', r.a.toFixed(2) + '%') +
     row('偏离', allocSign(r.dev) + '%', r.over ? 'ov' : '') +
     row('当前市值', allocNum(r.mv)) +
