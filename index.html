@@ -699,6 +699,24 @@ function esc(s) {
 function fmtMoney(n) {
   return (Number(n) || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+/* v0.24.0：定投进度图内文字一律「无 ¥、无小数」（用户裁定）。
+   只用于图表内，绝不替代 fmtMoney —— 资产配置 Tab 的占比/金额仍需 2 位小数。 */
+function fmtInt(n) {
+  return (Math.round(Number(n) || 0)).toLocaleString('zh-CN');
+}
+function fmtIntSigned(n) {
+  const v = Number(n) || 0;
+  return (v > 0 ? '+' : v < 0 ? '-' : '') + fmtInt(Math.abs(v));
+}
+/* v0.24.0：列宽不足时的紧凑金额（手机端 / 多标的时）。
+   ≥1 万 → 万单位并去掉末尾 .0（160000→"16万"、70210→"7万"）；<1 万保留千分位整数。 */
+function fmtCompact(n) {
+  const v = Number(n) || 0, a = Math.abs(v);
+  const body = a >= 10000
+    ? (a / 10000).toFixed(1).replace(/\.0$/, '') + '万'
+    : Math.round(a).toLocaleString('zh-CN');
+  return (v < 0 ? '−' : '') + body;
+}
 function fmtSigned(n) {
   const v = Number(n) || 0;
   return (v > 0 ? '+' : v < 0 ? '-' : '') + fmtMoney(Math.abs(v));
@@ -2655,8 +2673,9 @@ function openEditFundModal(id) {
   };
 }
 
-/* ===================== 定投进度图表（v0.23.0 单轴等比） =====================
-   卡片墙 → 单张 SVG 柱状图。**一根 0 轴、**一把尺子**——v0.22.x 的上下双带
+/* ===================== 定投进度图表（v0.24.0 标签体系 + 手机自适应） =====================
+   v0.23.0 的单轴内核（一根 0 轴、一把尺子）**一字未改**：
+   卡片墙 → 单张 SVG 柱状图。v0.22.x 的上下双带
    （DCA_COST_BAND / NEG_FRAC）已全部删除，勿再复活。
 
    【柱结构】每根柱占一个 x 槽位，单列堆叠：
@@ -2684,23 +2703,56 @@ function openEditFundModal(id) {
    全部量程由数据推导、零硬编码；只画场内标的，顺序沿用 sortedHoldings()
    的 order 拖拽序；计划外 w=0 保留一列且**照常画盈亏柱**，只是不画标尺线
    （缺线本身就是「不在计划内」的信号）。场外基金不入图（用户已确认）。
-   数据全部取自现有对象（shares/avgCost/posPL/plan.weights），零新增请求、零结构变更。
-   方案见 0930_05_修改方案_定投进度单轴等比v0.23.0.md
+数据全部取自现有对象（shares/avgCost/posPL/plan.weights），零新增请求、零结构变更。
+   方案见 0930_05_修改方案_定投进度单轴等比v0.23.0.md；
+   v0.24.0 的标签体系与手机端自适应见 0930_06_修改方案_定投标签与手机自适应v0.24.0.md
+
+   ---- v0.24.0 铁律：绘图区高度恒为 242px ----
+   DCA_H / DCA_PAD_T / DCA_PAD_B 三者只能以「plotH = DCA_H − DCA_PAD_T − DCA_PAD_B
+   = 242」为约束联动改动。任何让 plotH 变化的改法都会改变 unit ⇒ 所有柱子高度改变，
+   「看柱高 = 知金额」的等比前提被破坏。v0.24.0 加高画布给标签留位置、同时矮掉柱下
+   少掉的一行，两者精确抵消，柱高与 v0.23.0 逐像素一致。详见 0930_06 §4。
    ======================================================================== */
-const DCA_COL_W = 104;    /* 每根柱的列宽(px)，也是手机端横向滚动的最小单位 */
-const DCA_BAR_MAX = 64;   /* 柱宽上限；实际取 min(此值, 列宽×0.46) */
+const DCA_COL_W = 104;    /* 每根柱的列宽(px)（桌面基准） */
+const DCA_BAR_MAX = 64;   /* 柱宽上限；实际取 min(此值, 列宽×柱占比) */
+const DCA_BAR_RATIO = 0.46;   /* 桌面：需要横向滚动留白，柱不能太宽 */
+const DCA_BAR_RATIO_M = 0.62; /* 手机：宽度已铺满、不再滚动，可以放心加粗 */
 const DCA_MIN_W = 640;    /* 图表最小总宽：标的少时也不塌成一条窄带，多余部分留白 */
-const DCA_H = 360;        /* 320→360：绘图区 202→242px，等比放大 20%，不改变任何金额关系 */
+/* 画布总高 = PAD_T + plotH(242) + PAD_B。改这三个数必须保持 plotH=242，见上方铁律。 */
+const DCA_H = 354;        /* 360→354：绘图区仍为 242px（见铁律），画布自身矮 6px */
 const DCA_PAD_L = 92;     /* 左侧刻度留白：够放 "−¥10,000" */
 const DCA_PAD_R = 24;
-const DCA_PAD_T = 30;
-const DCA_PAD_B = 88;     /* 底部 4 行文字(名称/盈亏/收益率/超配成本) */
+const DCA_PAD_T = 8 + 4 + 2 * 14;  /* =40：画布顶余量8 + 标签离线4 + 预留 2 行标签 2×14 */
+const DCA_PAD_B = 72;     /* 底部 3 行文字(名称/盈亏/收益率)，v0.23.0 的 4 行去掉「超配」行 */
 const DCA_EPS = 0.005;    /* 金额判定容差，与旧卡片一致 */
 const DCA_MIN_SEG = 4;    /* 任何柱段的最低可见高度(px)；不足则按 4px 画，红绿对称 */
 const DCA_MIN_LINE_GAP = 6; /* 负侧辅助线距 0 轴不足此值就不画（两条线会糊成一条） */
 const DCA_LINE_CAP = 4;   /* 每侧辅助线根数上限：「少于 5 根」 */
-const DCA_LINE_TIE = 'few';  /* 'few'=宁可少不要多（默认）| 'many'=同等不浪费高度时多画 */
+const DCA_LINE_TIE = 'few';  /* 'few'=宁可少不要多（默认） | 'many'=同等不浪费高度时多画 */
 const DCA_DASH = '4 3';    /* 辅助线/橙线虚线节奏 */
+
+/* ---- v0.24.0：标签体系 ----
+   黑线上方「目标/待投」、橙线下方「超配/欠投/达标」、柱顶「计划外/成本」，
+   三种标签都画在不透明 chip 上（压在蓝柱或被辅助虚线穿过时仍可读）。 */
+const DCA_FONT = 10.5;      /* 刻度 / 柱下文字 */
+const DCA_FONT_M = 9;       /* 手机端刻度 / 柱下文字 */
+const DCA_LABEL_FONT = 9.5; /* 标签文字 */
+const DCA_LABEL_FONT_M = 9; /* 手机端标签文字 */
+const DCA_CHIP_PADX = 4;     /* chip 左右内边距 */
+const DCA_LABEL_ROW_H = 14; /* 一行 chip 总高（字 11 + 上下留白 3） */
+const DCA_LABEL_GAP = 4;     /* chip 底边 ↔ 它锚定的那根线 */
+const DCA_LABEL_ROWS = 2;    /* 最坏情况行数：目标/待投 或 计划外/成本 */
+/* 橙线下方标签必须完整落在「橙线 ~ 0 轴」之间：离线4 + 行高14 + 留 1px 不压 0 轴。
+   不足则**整块不画**（用户裁定：刚开始定投时橙线贴轴，本来就是多投，不必显示数字）。
+   实测：第 1 月 2 列显示，第 3 月起 5 列全显示。 */
+const DCA_MIN_LABEL_ROOM = DCA_LABEL_GAP + DCA_LABEL_ROW_H + 1;   /* =19 */
+const DCA_LINE_EXTRA = 6;    /* 黑线比橙线每侧多伸出 6px：tp→1 两线重合时仍各自可辨 */
+
+/* ---- v0.24.0：手机端自适应 ----
+   垂直几何与桌面完全一致（上面所有常量不分端），只缩横向 padding 与字号。 */
+const DCA_PAD_L_M = 34;      /* 手机左侧刻度改万单位（"16万" 约 22px），够用即可 */
+const DCA_PAD_R_M = 8;
+const DCA_LABEL_FULL_W = 84; /* 列宽 ≥ 此值用全称「目标：160000」，否则用万单位「16万」 */
 
 /* 边界 = step × lines：step 取 1/1.5/2/2.5/3/4/5/6/8/10 × 10^k，lines ∈ [minLines, maxLines]。
    选择顺序写死：① 浪费高度最少（step*lines − raw）② 线更少（step 更大）③ step 更大。
@@ -2755,6 +2807,9 @@ function dcaChartData(plan, tp) {
         w: w, hasPlan: w > 0,
         cost: cost, mv: sh * (h.currentPrice || 0),
         targetAbs: targetAbs, should: should, overCost: cost - should,
+        /* v0.24.0 待投 = 目标 − 已投成本（用户口径：「资金还有多少待投入」）。
+           注意与 overCost 区分：overCost 是相对「按进度应投」的，两把尺子可能同时为正。 */
+        remain: targetAbs - cost,
         gap: should - cost,
         pl: r ? r.pl : 0, hasPL: !!r,
         pct: r && Number.isFinite(r.pct) ? r.pct : null
@@ -2764,12 +2819,26 @@ function dcaChartData(plan, tp) {
 function dcaChartSVG(rows) {
   const n = rows.length;
   if (!n) return '';
-  const W = Math.max(DCA_MIN_W, DCA_PAD_L + n * DCA_COL_W + DCA_PAD_R);
+  /* ---- v0.24.0 宽度自适应：桌面行为与 v0.23.0 逐像素相同，手机端压缩到铺满容器 ----
+     need  = max(最小宽, 左右留白 + n×列宽基准)
+     avail = 容器实宽（.dca-scroll 的客户区）；量不到（视图 display:none）时回落 need
+     桌面 avail > need ⇒ W = need，不变；手机 avail < need ⇒ W = avail，不再横向滚动。
+     不设数量上限：标的再多也铺满，柱子变细即可（用户：最多 8 只，8 只要能放下）。 */
+  const mob = mqMobile.matches;
+  const padL = mob ? DCA_PAD_L_M : DCA_PAD_L;
+  const padR = mob ? DCA_PAD_R_M : DCA_PAD_R;
+  const font = mob ? DCA_FONT_M : DCA_FONT;
+  const labelFont = mob ? DCA_LABEL_FONT_M : DCA_LABEL_FONT;
+  const ratio = mob ? DCA_BAR_RATIO_M : DCA_BAR_RATIO;
+  const need = Math.max(DCA_MIN_W, padL + n * DCA_COL_W + padR);
+  const host = el('planSection');
+  const avail = host ? (host.clientWidth || 0) - 2 : 0;   /* −2：.dca-scroll 左右 1px 边框 */
+  const W = avail > 0 ? Math.min(need, avail) : need;
   const plotTop = DCA_PAD_T, plotBot = DCA_H - DCA_PAD_B;
-  const plotH = plotBot - plotTop, plotW = W - DCA_PAD_L - DCA_PAD_R;
+  const plotH = plotBot - plotTop, plotW = W - padL - padR;
   const colW = plotW / n;
-  const barW = Math.min(DCA_BAR_MAX, colW * 0.46);
-  const x0 = DCA_PAD_L, x1 = W - DCA_PAD_R;
+  const barW = Math.min(DCA_BAR_MAX, colW * ratio);
+  const x0 = padL, x1 = W - padR;
 
   /* ---- 单轴几何：一把尺子，没有 NEG_FRAC / 双带 / 任何自由比例 ---- */
   /* 上边界原始值 = max(所有柱顶, 期末目标黑线)；柱顶含盈利段（成本+盈利=市值），
@@ -2798,7 +2867,8 @@ function dcaChartSVG(rows) {
   const gl = yy => '<line x1="' + x0 + '" y1="' + yy.toFixed(1) + '" x2="' + x1 +
     '" y2="' + yy.toFixed(1) + '" stroke="var(--line)" stroke-width="1" stroke-dasharray="' + DCA_DASH + '"/>';
   const al = (v, yy) => '<text x="' + (x0 - 8) + '" y="' + (yy + 3.5).toFixed(1) +
-    '" text-anchor="end" font-size="10.5" fill="var(--muted)">' + dcaTick(v) + '</text>';
+    '" text-anchor="end" font-size="' + font + '" fill="var(--muted)">' +
+    (mob ? fmtCompact(v) : dcaTick(v)) + '</text>';
   const upLines = [], dnLines = [];
   for (let i = 1; i <= up.lines; i++) {
     const v = up.step * i, yy = y(v);
@@ -2819,18 +2889,47 @@ function dcaChartSVG(rows) {
   dnLines.forEach(g => s.push(al(g[0], g[1])));
   s.push(al(0, zeroY));
 
-  /* 柱段高度：等比优先；不足 DCA_MIN_SEG 才保底 4px。
+  /* ---- v0.24.0 标签底板 ----
+     三种标签（黑线上方目标/待投、橙线下方超配/欠投、柱顶计划外/成本）统一画在不透明 chip 上：
+     实测「超配」列的进度标签**必然压在蓝柱上**（成本>应投 ⇒ 橙线落在柱顶以下），
+     且 AI / 沪深300 两列的目标块会被 ¥80,000 辅助虚线横穿。底板保证任何背景下都可读。
+     chip 宽度按字符数估算（CJK 按 1 字 ≈ 1 字号、ASCII ≈ 0.62 字号，取 0.62 折中偏宽，宁宽勿挤）。 */
+  const txtW = t => {
+    let u = 0;
+    for (const ch of String(t)) u += (ch.charCodeAt(0) > 0x2e80 ? 1 : 0.62);
+    return u * labelFont;
+  };
+  const chip = (cx, top, txts, fill) => {
+    const w = Math.max.apply(null, txts.map(t => txtW(t) + DCA_CHIP_PADX * 2));
+    const h = txts.length * DCA_LABEL_ROW_H;
+    let out = '<rect x="' + (cx - w / 2).toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + w.toFixed(1) +
+      '" height="' + h + '" rx="3" fill="var(--card)" stroke="var(--line)" stroke-width="1"/>';
+    txts.forEach((t, i) => {
+      out += '<text x="' + cx.toFixed(1) + '" y="' +
+        (top + i * DCA_LABEL_ROW_H + DCA_LABEL_ROW_H - 4.5).toFixed(1) +
+        '" text-anchor="middle" font-size="' + labelFont + '" fill="' + (fill || 'var(--muted)') + '">' + esc(t) + '</text>';
+    });
+    return out;
+  };
+  /* 标签金额格式：列宽够就写全称，否则压成万单位（含义靠「位置 + 图例」承载） */
+  const fullForm = colW >= DCA_LABEL_FULL_W;
+  const amt = v => fullForm ? fmtInt(v) : fmtCompact(v);
+  const lbl = (k, v) => fullForm ? k + '：' + amt(v) : amt(v);
+
+  /* ---- 柱段高度：等比优先；不足 DCA_MIN_SEG 才保底 4px。
      保底值同时被所在区间的实际高度夹住——否则区间本身不足 4px 时柱子会画出绘图区
      （极端例：上边界 30 万、最大亏损仅 490 元 ⇒ 负区只有 0.4px）。
      夹住后「同额同高」依然成立：保底值只取决于几何，与金额无关。 */
-  const segH = amt => {
-    const raw = Math.abs(amt) * unit;
+  const segH = amt0 => {
+    const raw = Math.abs(amt0) * unit;
     if (raw >= DCA_MIN_SEG) return raw;
     return Math.min(DCA_MIN_SEG, zeroY - plotTop, plotBot - zeroY);
   };
 
   /* ---- 柱体 + 标尺线 + 轴下文字 ---- */
-  const TXT = 'font-size="10.5" text-anchor="middle"';
+  const TXT = 'font-size="' + font + '" text-anchor="middle"';
+  /* 柱下名称按列宽动态截断：CJK ≈ 1 字号宽，据此算能容几字（v0.23.0 是硬编码 5 字） */
+  const maxName = Math.max(2, Math.floor((colW - 2) / (font * 1.02)));
   rows.forEach((x, i) => {
     const cx = x0 + colW * (i + 0.5);
     const bx = cx - barW / 2;
@@ -2841,41 +2940,64 @@ function dcaChartSVG(rows) {
       '　成本 ¥' + fmtMoney(x.cost) + '　市值 ¥' + fmtMoney(x.mv) +
       '　盈亏 ' + (x.hasPL ? fmtSigned(x.pl) : '--') +
       '　' + (x.pct != null ? fmtPct(x.pct) : '') +
-      '　' + (x.hasPlan ? '期末目标 ¥' + fmtMoney(x.targetAbs) + '　按进度应投 ¥' + fmtMoney(x.should) : '未纳入定投计划')) +
+      '　' + (x.hasPlan
+        ? '期末目标 ¥' + fmtMoney(x.targetAbs) + '　按进度应投 ¥' + fmtMoney(x.should) +
+          /* 待投为负 = 已超最终目标，与黑线上只给 1 行保持一致：悬停也不显示负数待投 */
+          (x.remain >= DCA_EPS ? '　待投 ¥' + fmtMoney(x.remain) : '　已超最终目标') +
+          '　相对进度 ' + (x.overCost > DCA_EPS ? '超配 ¥' + fmtMoney(x.overCost)
+            : x.overCost < -DCA_EPS ? '欠投 ¥' + fmtMoney(-x.overCost) : '达标')
+        : '未纳入定投计划（成本 ¥' + fmtMoney(x.cost) + '）')) +
       '</title>');
     /* 蓝段：0 轴向上。柱顶 = y(cost)，是红段的落脚点 */
     const hCost = x.cost > 0 ? segH(x.cost) : 0;
     const costTop = zeroY - hCost;
     if (hCost > 0) s.push(bar('var(--dca-cost)', costTop, hCost));
     /* 红段：接在**已渲染的**蓝段顶端（柱顶=市值），保底时也严丝合缝 */
+    let barTopY = costTop;                      /* 已渲染的柱顶（计划外标签锚点） */
     if (x.pl > DCA_EPS) {
       const h = segH(x.pl);
       s.push(bar('var(--up)', costTop - h, h));
+      barTopY = costTop - h;
     } else if (x.pl < -DCA_EPS) {
       /* 绿段：上边缘紧贴 0 轴，与蓝段下边缘同一个 y */
       s.push(bar('var(--down)', zeroY, segH(x.pl)));
     }
     if (x.hasPlan) {
-      const h1 = barW / 2 + 8;
+      /* 橙线先画、黑线后画：tp→1 两线重合时，橙线若盖在黑线之上会把黑线打成两截，
+         「目标」标签就失去锚定的线。黑线再每侧多伸 6px，重合时两线各自可辨。 */
+      const h1 = barW / 2 + 8, h2 = h1 + DCA_LINE_EXTRA;
       const yt = y(x.targetAbs), ys = y(x.should);
-      s.push('<line x1="' + (cx - h1).toFixed(1) + '" y1="' + yt.toFixed(1) + '" x2="' + (cx + h1).toFixed(1) +
-        '" y2="' + yt.toFixed(1) + '" stroke="var(--text)" stroke-width="2.4"/>');
       s.push('<line x1="' + (cx - h1).toFixed(1) + '" y1="' + ys.toFixed(1) + '" x2="' + (cx + h1).toFixed(1) +
         '" y2="' + ys.toFixed(1) + '" stroke="var(--warn)" stroke-width="2" stroke-dasharray="' + DCA_DASH + '"/>');
+      s.push('<line x1="' + (cx - h2).toFixed(1) + '" y1="' + yt.toFixed(1) + '" x2="' + (cx + h2).toFixed(1) +
+        '" y2="' + yt.toFixed(1) + '" stroke="var(--text)" stroke-width="2.4"/>');
+      /* 黑线上方标签：成本 ≤ 目标给 2 行（目标/待投）；已超最终目标只给 1 行（目标）——
+         「超了多少」由橙线下方的超配/欠投负责，黑线这条线只回答「最终要投到多少」。 */
+      const R = (x.cost > x.targetAbs) ? 1 : 2;
+      const txts = R === 1
+        ? [lbl('目标', x.targetAbs)]
+        : [lbl('目标', x.targetAbs), lbl('待投', x.remain)];
+      s.push(chip(cx, yt - DCA_LABEL_GAP - R * DCA_LABEL_ROW_H, txts));
+      /* 橙线下方标签：必须完整落在「橙线 ~ 0 轴」之间，不够则整块不画 */
+      if (zeroY - ys >= DCA_MIN_LABEL_ROOM) {
+        const oc = x.overCost;
+        s.push(chip(cx, ys + DCA_LABEL_GAP,
+          [oc > DCA_EPS ? '超配 ' + amt(oc) : oc < -DCA_EPS ? '欠投 ' + amt(-oc) : '达标'],
+          oc > DCA_EPS ? 'var(--warn)' : 'var(--muted)'));
+      }
+    } else {
+      /* 计划外：无标尺线，标签锚在**已渲染的**柱顶（保底触发时不能用 y(cost)，会陷进柱子里） */
+      s.push(chip(cx, barTopY - DCA_LABEL_GAP - 2 * DCA_LABEL_ROW_H,
+        ['计划外', lbl('成本', x.cost)]));
     }
     const nm = String(x.name || '');
     s.push('<text x="' + cx.toFixed(1) + '" y="' + (plotBot + 18) + '" ' + TXT + ' font-weight="600" fill="var(--text)">' +
-      esc(nm.length > 5 ? nm.slice(0, 5) + '…' : nm) + '</text>');
+      esc(nm.length > maxName ? nm.slice(0, maxName) + '…' : nm) + '</text>');
     const plc = x.pl > DCA_EPS ? 'var(--up)' : x.pl < -DCA_EPS ? 'var(--down)' : 'var(--muted)';
     s.push('<text x="' + cx.toFixed(1) + '" y="' + (plotBot + 34) + '" ' + TXT + ' fill="' + plc + '">' +
-      (x.hasPL ? fmtSigned(x.pl) : '--') + '</text>');
+      (x.hasPL ? fmtIntSigned(x.pl) : '--') + '</text>');
     s.push('<text x="' + cx.toFixed(1) + '" y="' + (plotBot + 50) + '" ' + TXT + ' fill="' + plc + '">' +
       (x.pct != null ? fmtPct(x.pct) : '--') + '</text>');
-    const oc = x.overCost;
-    s.push('<text x="' + cx.toFixed(1) + '" y="' + (plotBot + 66) + '" ' + TXT + ' fill="' +
-      (oc > DCA_EPS ? 'var(--warn)' : 'var(--muted)') + '">' +
-      (!x.hasPlan ? '计划外' : oc > DCA_EPS ? '超配 ¥' + fmtMoney(oc)
-        : oc < -DCA_EPS ? '欠投 ¥' + fmtMoney(-oc) : '达标') + '</text>');
     s.push('</g>');
   });
   s.push('</svg>');
@@ -2908,7 +3030,8 @@ function renderPlan() {
           '<span class="lg"><i style="background:var(--down)"></i>亏损</span>' +
           '<span class="lg"><i class="ln" style="background:var(--text)"></i>期末目标</span>' +
           '<span class="lg"><i class="ln" style="background:var(--warn)"></i>按进度应投</span>' +
-          '<span class="lg muted-note">柱顶＝市值 · 绿段紧贴0轴向下 · 上下同一比例 · 无标尺线＝未纳入计划</span>' +
+          '<span class="lg muted-note">柱顶＝市值 · 绿段紧贴0轴向下 · 上下同一比例 · 无标尺线＝未纳入计划' +
+          '<br>超配/欠投＝相对时间进度 · 待投＝相对最终目标</span>' +
         '</div>' +
         '<div class="dca-scroll">' + dcaChartSVG(rows) + '</div>'
       : '<div class="empty" style="padding:26px 0">暂无可展示的场内标的</div>');
@@ -3908,6 +4031,9 @@ function bindEvents() {
       document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.dataset.view === b.dataset.tab));
       if (b.dataset.tab === 'monitor') lazyLoadMonitor();
       if (b.dataset.tab === 'kline') lazyLoadKlines(false);
+      /* v0.24.0：切到定投 Tab 必须重渲——图表宽度要量容器实宽，而 .view 默认
+         display:none，未激活时 clientWidth=0 会量到 0 宽走错分支 */
+      if (b.dataset.tab === 'plan') renderPlan();
     };
   });
 
@@ -3941,6 +4067,14 @@ function bindEvents() {
   initTouchDragSort();
   initChipDragSort();
   if (mqMobile.addEventListener) mqMobile.addEventListener('change', renderAll);
+  /* v0.24.0：窗口缩放 / 旋转屏幕后定投图要按新容器宽度重排（断点变化已由上面那条覆盖，
+     这里管的是同端内的纯宽度变化）。防抖 150ms，仅在定投 Tab 激活时才重渲。 */
+  let dcaRzTimer = 0;
+  window.addEventListener('resize', () => {
+    if (!(el('view-plan') && el('view-plan').classList.contains('active'))) return;
+    clearTimeout(dcaRzTimer);
+    dcaRzTimer = setTimeout(renderPlan, 150);
+  });
 
   el('btnNewHolding').onclick = openNewHoldingModal;
   el('btnQuote').onclick = () => { fetchQuotes(false); fetchMacro(false); lazyLoadKlines(true); };
