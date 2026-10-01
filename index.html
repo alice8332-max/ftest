@@ -16,7 +16,7 @@
   --down:#4caf50;
   --accent:#2f6fed;
   --warn:#f57c00;
---dca-cost:#8fa3bf;   /* 定投进度图：成本段（中性蓝灰，区别于盈亏红绿） */
+--dca-cost:#e2effc;   /* 定投进度图：成本段（v0.25.2 由蓝灰 #8fa3bf 改淡蓝，更清爽不显灰，橙线更跳） */
   /* 定投参考档位色（独立命名空间，不与行情涨跌语义混用） */
   --lv-green:#2e7d32;   /* 2X */
   --lv-lgreen:#558b2f;  /* 1.5X */
@@ -2776,7 +2776,9 @@ const DCA_LABEL_ROWS = 2;    /* 最坏情况行数：目标/待投 或 计划外
    不足则**整块不画**（用户裁定：刚开始定投时橙线贴轴，本来就是多投，不必显示数字）。
    实测：第 1 月 2 列显示，第 3 月起 5 列全显示。 */
 const DCA_MIN_LABEL_ROOM = DCA_LABEL_GAP + DCA_LABEL_ROW_H + 1;   /* =19 */
-const DCA_LINE_EXTRA = 6;    /* 黑线比橙线每侧多伸出 6px：tp→1 两线重合时仍各自可辨 */
+const DCA_LINE_EXTRA = 0;    /* v0.25.3：黑线不再比橙线长，两线等长（tp→1 时完全重合，用户接受）。
+                    原为 6（每侧多伸 6px，露出橙线端头以便分辨），但观感难看。
+                    重合时黑线仍可辨 —— 它后画且更粗（2.4 vs 2），会完整盖住橙线。 */
 
 /* ---- v0.25.0：手机端自适应 ----
    垂直几何与桌面完全一致（上面所有常量不分端），只缩横向 padding 与字号。 */
@@ -3010,8 +3012,9 @@ function dcaChartSVG(rows) {
       s.push(bar('var(--down)', zeroY, segH(x.pl)));
     }
     if (x.hasPlan) {
-      /* 橙线先画、黑线后画：tp→1 两线重合时，橙线若盖在黑线之上会把黑线打成两截，
-         「目标」标签就失去锚定的线。黑线再每侧多伸 6px，重合时两线各自可辨。 */
+      /* 橙线先画、黑线后画，两线等长（v0.25.3：黑线不再每侧多伸 6px）。
+         tp→1 两线重合时黑线因更粗（2.4 vs 2）而完整覆盖橙线，仍是一条完整的实线，
+         「目标」标签的锚定线不会被打断。 */
       const h1 = barW / 2 + 8, h2 = h1 + DCA_LINE_EXTRA;
       const yt = y(x.targetAbs), ys = y(x.should);
       s.push('<line x1="' + (cx - h1).toFixed(1) + '" y1="' + ys.toFixed(1) + '" x2="' + (cx + h1).toFixed(1) +
