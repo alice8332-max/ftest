@@ -308,6 +308,9 @@ body{
 .sync-dot.ok{background:var(--down)}
 .sync-dot.pending{background:var(--warn)}
 .sync-dot.err{background:var(--up)}
+/* ===== 行情来源状态（v0.26.0）===== */
+.quote-status{font-size:11px;color:var(--muted);white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}
+.quote-status.err{color:var(--up)}
 #bootOverlay,#loginOverlay{
   position:fixed;inset:0;background:var(--bg);z-index:400;
   display:flex;align-items:center;justify-content:center;padding:20px;
@@ -556,6 +559,7 @@ body{
         <option value="300">自动:5min</option>
         <option value="900">自动:15min</option>
       </select>
+      <span id="quoteStatus" class="quote-status"></span>
       <button id="btnExportJson" class="btn ghost">导出JSON</button>
       <button id="btnImportJson" class="btn ghost">导入恢复</button>
       <input type="file" id="importFile" accept=".json,application/json" hidden>
@@ -1720,6 +1724,14 @@ const QUOTE_URL = 'https://push2.eastmoney.com/api/qt/ulist.np/get';
 const QUOTE_FIELDS = 'f12,f14,f2,f17,f18,f124';
 const QUOTE_TIMEOUT = 8000;
 const QUOTE_INTERVALS = [0, 60, 300, 900];
+/* v0.26.0：东财接口被对端阻断时的腾讯备源 + 5 分钟熔断 */
+const TEN_QUOTE_URL = 'https://qt.gtimg.cn/q=';
+const TEN_KLINE_URL = 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get';
+const TEN_KLINE_LMT = 120;
+const SOURCE_COOLDOWN = 5 * 60 * 1000;
+const MACRO_STALE_MS = 15 * 60 * 1000;
+let quoteEmDownUntil = 0;
+let klineEmDownUntil = 0;
 let quoteTimer = null;
 let quoteBusy = false;
 let lastQuoteErrToastAt = 0;
@@ -1793,6 +1805,118 @@ function jsonpQuote(secids, fields) {
       '&fields=' + (fields || QUOTE_FIELDS) + '&fltt=2&cb=' + cbName + '&_=' + Date.now(),
     data => (data && data.data && Array.isArray(data.data.diff)) ? data.data.diff : []);
 }
+/* ===== 腾讯备源（v0.26.0）=====
+   行情：qt.gtimg.cn/q=sh510880,sz159819 返回全局 v_<qcode>="..."，需 charset=gbk
+   宏观：同上（sh000001/sz399106/usIXIC）+ hf_OIL 为逗号分隔
+   字段：p[1]名称 p[2]代码 p[3]现价 p[4]昨收 p[5]今开 p[30]时间 p[31]涨跌 p[32]涨跌幅 p[37]成交额(万元)
+*/
+function tenQCode(code) { return (/^[569]/.test(String(code)) ? 'sh' : 'sz') + String(code); }
+function tenTimeToMs(s) {
+  const m = String(s).match(/^(\d{4})[\/\-]?(\d{2})[\/\-]?(\d{2})[ T]?(\d{2}):?(\d{2}):?(\d{2})/);
+  if (!m) return 0;
+  return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime();
+}
+function parseTencentQuote(s) {
+  const p = String(s).split('~');
+  if (p.length < 33) return null;
+  const price = Number(p[3]);
+  if (!Number.isFinite(price) || !(price > 0)) return null;
+  const chg = Number(p[31]), pct = Number(p[32]);
+  return {
+    code: String(p[2] || ''),
+    name: String(p[1] || '').trim(),
+    price,
+    prevClose: Number(p[4]) > 0 ? Number(p[4]) : 0,
+    open: Number(p[5]) > 0 ? Number(p[5]) : 0,
+    timeMs: tenTimeToMs(p[30]),
+    chg: Number.isFinite(chg) ? chg : null,
+    pct: Number.isFinite(pct) ? pct : null,
+    amount: Number(p[37]) || 0
+  };
+}
+function jsonpTencentRaw(symbols) {
+  return new Promise((resolve, reject) => {
+    const vars = symbols.map(s => 'v_' + s);
+    const script = document.createElement('script');
+    script.charset = 'gbk';
+    let done = false;
+    const cleanup = () => {
+      if (done) return; done = true;
+      clearTimeout(tid);
+      if (script.parentNode) script.parentNode.removeChild(script);
+      vars.forEach(v => { try { delete window[v]; } catch (e) { window[v] = undefined; } });
+    };
+    const tid = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, QUOTE_TIMEOUT);
+    script.onload = () => {
+      const map = {};
+      let any = false;
+      symbols.forEach(s => {
+        const raw = window['v_' + s];
+        const q = raw ? parseTencentQuote(raw) : null;
+        if (q) { map[s] = q; any = true; }
+      });
+      cleanup();
+      if (!any) { reject(new Error('empty')); return; }
+      resolve(map);
+    };
+    script.onerror = () => { cleanup(); reject(new Error('network')); };
+    script.src = TEN_QUOTE_URL + symbols.join(',') + '&_=' + Date.now();
+    document.head.appendChild(script);
+  });
+}
+function jsonpTencentQuote(codes) {
+  return jsonpTencentRaw(codes.map(tenQCode)).then(bySym => {
+    const map = {};
+    codes.forEach(c => { const q = bySym[tenQCode(c)]; if (q) map[q.code] = q; });
+    return map;
+  });
+}
+function parseTencentHF(s) {
+  const p = String(s).split(',');
+  if (p.length < 8) return null;
+  const price = Number(p[0]);
+  if (!Number.isFinite(price) || !(price > 0)) return null;
+  const pct = Number(p[1]), prev = Number(p[7]);
+  return {
+    code: String(p[2] || ''),
+    name: String(p[13] || '').trim(),
+    price,
+    pct: Number.isFinite(pct) ? pct : null,
+    chg: (Number.isFinite(prev) && prev > 0) ? (price - prev) : null
+  };
+}
+function jsonpTencentGlobal(symbol) {
+  return new Promise((resolve, reject) => {
+    const v = 'v_' + symbol;
+    const script = document.createElement('script');
+    script.charset = 'gbk';
+    let done = false;
+    const cleanup = () => {
+      if (done) return; done = true;
+      clearTimeout(tid);
+      if (script.parentNode) script.parentNode.removeChild(script);
+      try { delete window[v]; } catch (e) { window[v] = undefined; }
+    };
+    const tid = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, QUOTE_TIMEOUT);
+    script.onload = () => {
+      const raw = window[v];
+      cleanup();
+      const q = raw ? parseTencentHF(raw) : null;
+      if (!q) { reject(new Error('empty')); return; }
+      resolve(q);
+    };
+    script.onerror = () => { cleanup(); reject(new Error('network')); };
+    script.src = TEN_QUOTE_URL + symbol + '&_=' + Date.now();
+    document.head.appendChild(script);
+  });
+}
+function setQuoteStatus(txt, isErr) {
+  const s = el('quoteStatus');
+  if (!s) return;
+  s.textContent = txt || '';
+  s.title = txt || '';
+  s.classList.toggle('err', !!isErr);
+}
 function quoteErrToast(silent, msg) {
   if (!silent) { toast(msg); return; }
   const now = Date.now();
@@ -1806,36 +1930,62 @@ async function fetchQuotes(silent) {
   hs.forEach(h => { byCode[h.code] = h; });
   quoteBusy = true;
   el('btnQuote').disabled = true;
+  let src = '东财';
   try {
-    const diff = await jsonpQuote(hs.map(h => secidOf(h.code)).join(','));
     const updated = [];
     let ts = 0;
-    diff.forEach(q => {
-      const h = byCode[q.f12];
-      if (!h) return;
-      const price = Number(q.f2), open = Number(q.f17), prev = Number(q.f18);
-      if (!Number.isFinite(price) || !(price > 0)) return;
-      h.currentPrice = price;
-      h.prevClose = Number.isFinite(prev) && prev > 0 ? prev : 0;
-      h.todayOpen = Number.isFinite(open) && open > 0 ? open : 0;
-      updated.push(h);
-      const t = Number(q.f124);
-      if (Number.isFinite(t) && t > ts) ts = t;
-    });
+    let got = false;
+    if (Date.now() >= quoteEmDownUntil) {
+      try {
+        const diff = await jsonpQuote(hs.map(h => secidOf(h.code)).join(','));
+        diff.forEach(q => {
+          const h = byCode[q.f12];
+          if (!h) return;
+          const price = Number(q.f2), open = Number(q.f17), prev = Number(q.f18);
+          if (!Number.isFinite(price) || !(price > 0)) return;
+          h.currentPrice = price;
+          h.prevClose = Number.isFinite(prev) && prev > 0 ? prev : 0;
+          h.todayOpen = Number.isFinite(open) && open > 0 ? open : 0;
+          updated.push(h);
+          const t = Number(q.f124);
+          if (Number.isFinite(t) && t > ts) ts = t;
+        });
+        if (!updated.length) throw new Error('empty');
+        ts = ts * 1000;
+        got = true;
+      } catch (e) {
+        quoteEmDownUntil = Date.now() + SOURCE_COOLDOWN;
+      }
+    }
+    if (!got) {
+      src = '腾讯';
+      const map = await jsonpTencentQuote(hs.map(h => h.code));
+      hs.forEach(h => {
+        const q = map[h.code];
+        if (!q) return;
+        h.currentPrice = q.price;
+        h.prevClose = q.prevClose;
+        h.todayOpen = q.open;
+        updated.push(h);
+        if (q.timeMs > ts) ts = q.timeMs;
+      });
+      if (!updated.length) throw new Error('empty');
+    }
     if (updated.length) {
       const d = today();
       updated.forEach(h => { h.lastUpdate = d; });
       save();
       renderAll();
+      setQuoteStatus('来源 ' + src + (ts > 0 ? ' · ' + macTime(ts) : ''), false);
       let tstr = '';
-      if (ts > 0) {
-        tstr = ' · 行情 ' + macTime(ts * 1000);
-      }
+      if (ts > 0) tstr = ' · 行情 ' + macTime(ts);
       if (!silent) toast('已更新 ' + updated.length + ' 只标的现价' + tstr);
     } else {
+      setQuoteStatus('行情获取失败', true);
       quoteErrToast(silent, '接口未返回有效行情，请改用手动录入');
     }
   } catch (e) {
+    setQuoteStatus('行情获取失败', true);
     quoteErrToast(silent, '行情拉取失败，可稍后重试或用手动录入');
   } finally {
     quoteBusy = false;
@@ -1932,34 +2082,82 @@ function jsonpKlineAmtHost(host, secid) {
     });
 }
 function jsonpKlineAmt(secid) {
+  if (Date.now() < klineEmDownUntil) return Promise.reject(new Error('cooldown'));
   return fetchWithHostRetry(KLINE_HOSTS, host => jsonpKlineAmtHost(host, secid));
+}
+async function jsonpTencentMacro() {
+  const res = await Promise.allSettled([
+    jsonpTencentRaw(['sh000001', 'sz399106']),
+    jsonpTencentRaw(['usIXIC']),
+    jsonpTencentGlobal('hf_OIL')
+  ]);
+  const toMacro = q => ({ code: q.code, name: q.name, price: q.price, pct: q.pct, chg: q.chg });
+  const out = { sh: null, ndx: null, ou: null, turnoverToday: 0, fresh: [] };
+  if (res[0].status === 'fulfilled') {
+    const map = res[0].value;
+    const shq = map['sh000001'], szq = map['sz399106'];
+    if (shq) { out.sh = toMacro(shq); out.fresh.push('sh'); }
+    const turn = (shq ? shq.amount : 0) + (szq ? szq.amount : 0);
+    if (turn > 0) { out.turnoverToday = turn * 1e4; out.fresh.push('turnover'); }
+  }
+  if (res[1].status === 'fulfilled') { const q = res[1].value['usIXIC']; if (q) { out.ndx = toMacro(q); out.fresh.push('ndx'); } }
+  if (res[2].status === 'fulfilled') { out.ou = toMacro(res[2].value); out.fresh.push('ou'); }
+  if (!out.sh && !out.ndx && !out.ou) throw new Error('empty');
+  return out;
 }
 async function fetchMacro(silent) {
   if (macroBusy) return;
   macroBusy = true;
   let m = null;
   try {
-    const diff = await jsonpQuote('1.000001,0.399106,100.NDX,112.B00Y,118.AU9999', 'f12,f13,f14,f2,f3,f4,f6,f62');
-    const by = {};
-    diff.forEach(q => { by[(q.f13 != null ? q.f13 + '.' : '') + q.f12] = q; });
     const prev = macroStore();
-    m = { at: Date.now(), date: today() };
-    MACRO_IDS.forEach(it => {
-      const itm = pickMacro(by[it.secid]);
-      m[it.key] = itm || (prev && prev[it.key]) || null;
-    });
-    const shQ = by['1.000001'];
-    const szQ = by['0.399106'] || by['0.399001'];
-    m.turnoverToday = macroYuan(shQ && shQ.f6) + macroYuan(szQ && szQ.f6);
+    m = { at: Date.now(), date: today(), fresh: [] };
+    let emOk = false;
+    if (Date.now() >= quoteEmDownUntil) {
+      try {
+        const diff = await jsonpQuote('1.000001,0.399106,100.NDX,112.B00Y,118.AU9999', 'f12,f13,f14,f2,f3,f4,f6,f62');
+        const by = {};
+        diff.forEach(q => { by[(q.f13 != null ? q.f13 + '.' : '') + q.f12] = q; });
+        if (!MACRO_IDS.some(it => pickMacro(by[it.secid]))) throw new Error('empty');
+        MACRO_IDS.forEach(it => {
+          const itm = pickMacro(by[it.secid]);
+          if (itm) { m[it.key] = itm; m.fresh.push(it.key); }
+          else m[it.key] = (prev && prev[it.key]) || null;
+        });
+        const shQ = by['1.000001'];
+        const szQ = by['0.399106'] || by['0.399001'];
+        m.turnoverToday = macroYuan(shQ && shQ.f6) + macroYuan(szQ && szQ.f6);
+        if (m.turnoverToday > 0) m.fresh.push('turnover');
+        const fSH = macroFlow(shQ && shQ.f62);
+        const fSZ = macroFlow(szQ && szQ.f62);
+        const liveFlow = (fSH != null && fSH !== 0) || (fSZ != null && fSZ !== 0);
+        m.flow = liveFlow ? ((fSH || 0) + (fSZ || 0)) : (prev && Number.isFinite(prev.flow) ? prev.flow : null);
+        if (liveFlow) m.fresh.push('flow');
+        m.src = '东财';
+        emOk = true;
+      } catch (e) {
+        quoteEmDownUntil = Date.now() + SOURCE_COOLDOWN;
+      }
+    }
+    if (!emOk) {
+      const ten = await jsonpTencentMacro();
+      m.sh = ten.sh || (prev && prev.sh) || null;
+      m.ndx = ten.ndx || (prev && prev.ndx) || null;
+      m.ou = ten.ou || (prev && prev.ou) || null;
+      m.au = (prev && prev.au) || null;
+      m.turnoverToday = ten.turnoverToday > 0 ? ten.turnoverToday
+        : (prev && Number.isFinite(prev.turnoverToday) ? prev.turnoverToday : 0);
+      m.flow = prev && Number.isFinite(prev.flow) ? prev.flow : null;
+      m.fresh = ten.fresh.slice();
+      m.src = '腾讯';
+    }
     if (!(m.turnoverToday > 0) && prev && prev.turnoverToday > 0) m.turnoverToday = prev.turnoverToday;
     m.turnoverYest = prev && Number.isFinite(prev.turnoverYest) ? prev.turnoverYest : null;
-    const fSH = macroFlow(shQ && shQ.f62);
-    const fSZ = macroFlow(szQ && szQ.f62);
-    const liveFlow = (fSH != null && fSH !== 0) || (fSZ != null && fSZ !== 0);
-    m.flow = liveFlow ? ((fSH || 0) + (fSZ || 0)) : (prev && Number.isFinite(prev.flow) ? prev.flow : null);
     saveMacroStore(m);
     renderMacroBar();
+    setQuoteStatus('来源 ' + (m.src || '东财') + ' · ' + macTime(m.at), false);
   } catch (e) {
+    setQuoteStatus('宏观获取失败', true);
     if (!silent) quoteErrToast(silent, '宏观数据拉取失败');
   } finally {
     macroBusy = false;
@@ -2004,18 +2202,19 @@ function renderMacroBar() {
   if (!bar) return;
   const m = macroStore();
   const t = macTime(m && m.at);
-  const stale = !!(m && m.date && m.date !== today());
-  const tail = stale ? ' · 缓存' : '';
+  const fresh = Array.isArray(m && m.fresh) ? m.fresh : null;
+  const isFresh = k => !!(m && m.date === today() && (fresh ? fresh.indexOf(k) !== -1 : true));
+  const tailFor = k => isFresh(k) ? '' : ' · 缓存';
   const cards = [];
   if (m && m.at) {
-    cards.push(macIndexCard('上证指数', 'SH 000001 · ' + t + tail, m.sh));
+    cards.push(macIndexCard('上证指数', 'SH 000001 · ' + t + tailFor('sh'), m.sh));
     const turn = m.turnoverToday > 0 ? fmtYi(m.turnoverToday, 0) + '亿' : '--';
     let delta = null;
     if (m.turnoverToday > 0 && m.turnoverYest > 0) delta = m.turnoverToday - m.turnoverYest;
     const deltaTxt = delta == null ? '--' : ((delta >= 0 ? '放量 +' : '缩量 ') + fmtYi(delta, 0) + '亿');
     cards.push('<div class="mac-card">' +
       '<div class="mac-name">成交总额</div>' +
-      '<div class="mac-meta">沪深两市 · ' + t + tail + '</div>' +
+      '<div class="mac-meta">沪深两市 · ' + t + tailFor('turnover') + '</div>' +
       '<div class="mac-val">' + turn + '</div>' +
       '<div class="mac-row"><span class="' + (delta != null ? cls(delta) : '') + '">' + deltaTxt + '</span></div>' +
     '</div>');
@@ -2029,14 +2228,14 @@ function renderMacroBar() {
     }
     cards.push('<div class="mac-card">' +
       '<div class="mac-name">资金净流入</div>' +
-      '<div class="mac-meta">沪深两市主力 · ' + t + tail + '</div>' +
+      '<div class="mac-meta">沪深两市主力 · ' + t + tailFor('flow') + '</div>' +
       '<div class="mac-val">' + flowTxt + '</div>' +
       '<div class="mac-row"><span class="' + (flowOk ? cls(m.flow) : '') + '">' +
       (flowOk ? (m.flow >= 0 ? '净流入' : '净流出') : '') + (flowPct ? ' · ' + flowPct : '') + '</span></div>' +
     '</div>');
-    cards.push(macIndexCard('纳斯达克', 'IXIC · ' + t + tail, m.ndx));
-    cards.push(macIndexCard('布油 UKOIL', 'Brent 当月 · ' + t + tail, m.ou));
-    cards.push(macIndexCard('黄金9999', 'SGE AU9999 · ' + t + tail, m.au));
+    cards.push(macIndexCard('纳斯达克', 'IXIC · ' + t + tailFor('ndx'), m.ndx));
+    cards.push(macIndexCard('布油 UKOIL', 'Brent 当月 · ' + t + tailFor('ou'), m.ou));
+    cards.push(macIndexCard('黄金9999', 'SGE AU9999 · ' + t + tailFor('au'), m.au));
   } else {
     for (let i = 0; i < 6; i++) {
       cards.push('<div class="mac-card"><div class="mac-name">--</div><div class="mac-meta">加载中…</div>' +
@@ -2104,8 +2303,52 @@ function jsonpKlineHost(secid, host) {
       return bars;
     });
 }
-function jsonpKline(secid) {
-  return fetchWithHostRetry(KLINE_HOSTS, host => jsonpKlineHost(secid, host));
+function jsonpKlineTencent(code) {
+  return new Promise((resolve, reject) => {
+    const sym = tenQCode(code);
+    const cbName = 'kline_' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+    const script = document.createElement('script');
+    let done = false;
+    const cleanup = () => {
+      if (done) return; done = true;
+      clearTimeout(tid);
+      if (script.parentNode) script.parentNode.removeChild(script);
+      try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
+    };
+    const tid = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, KLINE_TIMEOUT);
+    script.onload = () => {
+      const data = window[cbName];
+      cleanup();
+      try {
+        const node = data && data.data && data.data[sym];
+        const ks = node && (node.day || node.qfqday);
+        if (!ks || !ks.length) throw new Error('empty');
+        const bars = [];
+        ks.forEach(a => {
+          const o = +a[1], c = +a[2], hi = +a[3], lo = +a[4];
+          if (!Number.isFinite(o) || !Number.isFinite(c) || !Number.isFinite(hi) || !Number.isFinite(lo) || !(c > 0)) return;
+          bars.push({ date: a[0], open: o, close: c, high: hi, low: lo });
+        });
+        if (!bars.length) throw new Error('badbars');
+        resolve(bars);
+      } catch (e) { reject(e); }
+    };
+    script.onerror = () => { cleanup(); reject(new Error('network')); };
+    script.src = TEN_KLINE_URL + '?_var=' + cbName + '&param=' + sym + ',day,,,' + TEN_KLINE_LMT + ',&_=' + Date.now();
+    document.head.appendChild(script);
+  });
+}
+async function jsonpKline(secid) {
+  if (Date.now() >= klineEmDownUntil) {
+    try {
+      const bars = await fetchWithHostRetry(KLINE_HOSTS, host => jsonpKlineHost(secid, host));
+      return { bars, src: '东财' };
+    } catch (e) {
+      klineEmDownUntil = Date.now() + SOURCE_COOLDOWN;
+    }
+  }
+  const bars = await jsonpKlineTencent(String(secid).split('.')[1]);
+  return { bars, src: '腾讯' };
 }
 function klineCached(code) {
   const c = klineStore()[code];
@@ -2118,8 +2361,8 @@ async function fetchKlineOne(code) {
   if (klineBusy[code]) return true;
   klineBusy[code] = true;
   try {
-    const bars = await jsonpKline(secidOf(code));
-    klineStore()[code] = { day: today(), bars };
+    const res = await jsonpKline(secidOf(code));
+    klineStore()[code] = { day: today(), bars: res.bars, src: res.src };
     saveKlineStore();
     delete klineFails[code];
     return true;
@@ -2193,7 +2436,9 @@ function renderKlines() {
     initKlineScrub(card, hs[sel]);
     initKlineSwipe(card, hs, sel);
   }
-  el('klineSrcNote').textContent = 'K线来源：东方财富公开历史行情（近一个月日K）；B/S 标记为你录入的交易流水，网格线 = 最近一次买入价 × (1±配置%)；时间窗口：拖动可视化下方时间条左端压缩、拖动图表平移，双击时间条恢复全月，窗口跟随云端同步。';
+  const srcs = Array.from(new Set(hs.map(h => (klineStore()[h.code] || {}).src).filter(Boolean)));
+  const srcTxt = srcs.length ? '（当前：' + srcs.join('/') + '）' : '';
+  el('klineSrcNote').textContent = 'K线来源：东方财富公开历史行情，东财不可用时自动切换腾讯' + srcTxt + '（近一个月日K）；B/S 标记为你录入的交易流水，网格线 = 最近一次买入价 × (1±配置%)；时间窗口：拖动可视化下方时间条左端压缩、拖动图表平移，双击时间条恢复全月，窗口跟随云端同步。';
 }
 function initKlineSwipe(card, hs, sel) {
   let sx = null, sy = null, pid = null;
