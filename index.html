@@ -161,7 +161,7 @@ body{
 .tx-table td{padding:9px 12px;border-bottom:1px solid #eef0f4;font-size:13px;white-space:nowrap}
 .tx-table tbody tr:hover{background:#f6f8fb}
 .tx-table tr:last-child td{border-bottom:none}
-/* v0.27.0：双击/双点标记（短线/T 操作）——浅蓝底；td 上色以盖过 tr 的 hover 底色 */
+/* v0.27.1：点「T」按钮标记（短线/T 操作）——整行浅蓝底；td 上色以盖过 tr 的 hover 底色 */
 .tx-table tbody tr{user-select:none}
 .tx-table tbody tr.tx-flag td{background:rgba(37,99,235,.10)}
 .tx-table tbody tr.tx-flag:hover td{background:rgba(37,99,235,.16)}
@@ -172,6 +172,9 @@ body{
 .link-del:hover{color:var(--up)}
 .link-edit{color:var(--muted);cursor:pointer;font-size:12px;user-select:none}
 .link-edit:hover{color:var(--accent)}
+.link-flag{color:var(--muted);cursor:pointer;font-size:12px;font-weight:700;user-select:none;min-width:16px;text-align:center;border-radius:4px;padding:0 4px}
+.link-flag:hover{color:var(--accent)}
+.link-flag.on{background:var(--accent);color:#fff}
 .overlay{
   position:fixed;inset:0;background:rgba(15,23,42,.45);
   display:flex;align-items:center;justify-content:center;z-index:100;
@@ -1354,7 +1357,7 @@ function renderTransactions() {
       '<td class="num ' + (t.type === 'buy' ? 'up' : 'down') + '">' + fmtSigned(t.type === 'buy' ? t.amount : -t.amount) + '</td>' +
       '<td class="num">' + fmtMoney(t.fee) + '</td>' +
       '<td class="note-cell" title="' + esc(t.note || '') + '">' + esc(t.note || '') + '</td>' +
-      '<td><div class="row-actions"><span class="link-edit" data-edit="' + t.id + '">编辑</span><span class="link-del" data-del="' + t.id + '">删除</span></div></td>' +
+      '<td><div class="row-actions"><span class="link-edit" data-edit="' + t.id + '">编辑</span><span class="link-flag' + (t.flag ? ' on' : '') + '" data-t="' + t.id + '" role="button" aria-pressed="' + (t.flag ? 'true' : 'false') + '">T</span></div></td>' +
     '</tr>';
   }).join('');
 }
@@ -1663,12 +1666,18 @@ function openEditTxModal(txId) {
   const ov = openModal({
     title: '编辑流水 - ' + esc(h.code) + ' ' + esc(h.name),
     body,
-    foot: '<button class="btn" data-x>取消</button><button class="btn primary" data-go>保存修改</button>'
+    foot: '<button class="btn danger" data-del>删除</button><span class="grow"></span><button class="btn" data-x>取消</button><button class="btn primary" data-go>保存修改</button>'
   });
   const typeSel = ov.querySelector('#xType'), qty = ov.querySelector('#xQty'),
         price = ov.querySelector('#xPrice'), fee = ov.querySelector('#xFee');
   bindFeeCalc(qty, price, fee, () => h.type, () => typeSel.value === 'buy');
   ov.querySelector('[data-x]').onclick = ov.close;
+  /* v0.27.1：删除从行内移入编辑弹窗（视为编辑的一种），仍走 deleteTx 的两步确认 */
+  ov.querySelector('[data-del]').onclick = async () => {
+    const before = state.transactions.length;
+    await deleteTx(txId);
+    if (state.transactions.length < before) ov.close();
+  };
   ov.querySelector('[data-go]').onclick = () => {
     const errEl = ov.querySelector('#xErr');
     const type = typeSel.value;
@@ -1708,20 +1717,21 @@ function openEditTxModal(txId) {
 
 async function deleteTx(id) {
   const t = state.transactions.find(x => x.id === id);
-  if (!t) return;
+  if (!t) return false;
   const h = getHolding(t.holdingId) || {};
   const ok1 = await confirmDialog(
     '确定删除该条流水？<br><span class="muted">' + esc(t.date) + ' ' + opInfo(t).txt + ' ' +
     esc(h.code || '') + ' ' + esc(h.name || '') + ' × ' + fmtShares(t.shares, h.type || 'etf') + '</span>',
     { title: '删除流水', okText: '删除' }
   );
-  if (!ok1) return;
+  if (!ok1) return false;
   const ok2 = await confirmDialog('再次确认：删除后不可恢复，且不会回滚持仓数据。', { title: '二次确认', okText: '仍要删除' });
-  if (!ok2) return;
+  if (!ok2) return false;
   state.transactions = state.transactions.filter(x => x.id !== id);
   save();
   renderTransactions();
   toast('已删除该条流水');
+  return true;
 }
 
 const QUOTE_URL = 'https://push2.eastmoney.com/api/qt/ulist.np/get';
@@ -4536,44 +4546,24 @@ function bindHoldingsClick() {
     openTradeOrAction(card.dataset.id, btn.dataset.act);
   });
 }
-let txLastTap = { id: '', t: 0 };
-/* v0.27.0：翻转某条流水的标记（浅蓝底，用于区分短线/T 操作），持久化到 state 并重绘 */
-function toggleTxFlag(id) {
+/* v0.27.1：翻转某条流水的标记（浅蓝底，用于区分短线/T 操作）。
+   只就地切换该行 class（不重绘整表，消除 v0.27.0 双击标记的卡顿），再持久化。
+   双击/双点识别已废弃——改为行内「T」按钮单击切换。 */
+function toggleTxFlag(id, btn) {
   const t = state.transactions.find(x => x.id === id);
   if (!t) return;
   t.flag = !t.flag;
+  const tr = btn && btn.closest ? btn.closest('tr[data-id]') : null;
+  if (tr) tr.classList.toggle('tx-flag', !!t.flag);
+  if (btn && btn.classList) btn.classList.toggle('on', !!t.flag);
   save();
-  renderTransactions();
 }
 function bindTxClick() {
   el('txBody').addEventListener('click', e => {
-    const del = e.target.closest('[data-del]');
-    if (del) deleteTx(del.dataset.del);
+    const tf = e.target.closest('[data-t]');
+    if (tf) { toggleTxFlag(tf.dataset.t, tf); return; }
     const edit = e.target.closest('[data-edit]');
     if (edit) openEditTxModal(edit.dataset.edit);
-  });
-  /* 双击（桌面）/ 双点（手机）切换整行标记；单击不处理。
-     触屏用 touchend 自行计时（不依赖 dblclick），命中后 preventDefault 抑制合成 click，
-     并置 txLastTap 时间戳让随后的 dblclick 去重，避免手机端切换两次。 */
-  el('txBody').addEventListener('dblclick', e => {
-    if (e.target.closest('[data-edit],[data-del]')) return;
-    const tr = e.target.closest('tr[data-id]');
-    if (!tr) return;
-    if (txLastTap.id === tr.dataset.id && Date.now() - txLastTap.t < 500) return;
-    toggleTxFlag(tr.dataset.id);
-  });
-  el('txBody').addEventListener('touchend', e => {
-    if (e.target.closest('[data-edit],[data-del]')) return;
-    const tr = e.target.closest('tr[data-id]');
-    if (!tr) return;
-    const id = tr.dataset.id, now = Date.now();
-    if (txLastTap.id === id && now - txLastTap.t < 350) {
-      txLastTap = { id: '', t: 0 };
-      toggleTxFlag(id);
-      if (e.cancelable) e.preventDefault();
-    } else {
-      txLastTap = { id: id, t: now };
-    }
   });
 }
 function openTradeOrAction(id, act) {
