@@ -161,6 +161,10 @@ body{
 .tx-table td{padding:9px 12px;border-bottom:1px solid #eef0f4;font-size:13px;white-space:nowrap}
 .tx-table tbody tr:hover{background:#f6f8fb}
 .tx-table tr:last-child td{border-bottom:none}
+/* v0.27.0：双击/双点标记（短线/T 操作）——浅蓝底；td 上色以盖过 tr 的 hover 底色 */
+.tx-table tbody tr{user-select:none}
+.tx-table tbody tr.tx-flag td{background:rgba(37,99,235,.10)}
+.tx-table tbody tr.tx-flag:hover td{background:rgba(37,99,235,.16)}
 .empty-row td{text-align:center;color:var(--muted);padding:40px 0}
 .note-cell{max-width:280px;overflow:hidden;text-overflow:ellipsis}
 .row-actions{display:flex;gap:10px}
@@ -1249,7 +1253,7 @@ function renderHoldings() {
         '<span class="hg-head">操作</span></div>';
     }
     for (const h of etfs) {
-      html += holdRowHTML(h, posPL(h), dayPLOf(h), lastBuyPriceOf(h));
+      html += holdRowHTML(h, posPL(h), dayPLOf(h));
     }
     html += '</div>';
     for (const h of funds) {
@@ -1297,12 +1301,12 @@ function renderHoldings() {
   }
   el('holdingList').innerHTML = html;
 }
-function holdRowHTML(h, r, day, lbp) {
+function holdRowHTML(h, r, day) {
   return '<div class="hold-row" data-id="' + h.id + '" draggable="' + (holdSort.key ? 'false' : 'true') + '">' +
     '<div class="hg-cell"><span class="code">' + esc(h.code) + '</span><span class="name">' + esc(h.name) + '</span></div>' +
     '<div class="hg-cell n">' + (r ? '<span class="v1 ' + cls(r.pl) + '">' + fmtSigned(r.pl) + '</span><span class="v2 ' + cls(r.pl) + '">' + fmtPct(r.pct) + '</span>' : '<span class="v1">--</span><span class="v2">--</span>') + '</div>' +
     '<div class="hg-cell n"><span class="v1">' + (h.currentPrice > 0 ? fmtPrice(h.currentPrice, h.type) : '--') + '</span></div>' +
-    '<div class="hg-cell n"><span class="v1">' + (h.avgCost > 0 ? fmtPrice(h.avgCost, h.type) : '--') + '</span><span class="v2">' + (lbp !== null ? fmtPrice(lbp, h.type) : '--') + '</span></div>' +
+    '<div class="hg-cell n"><span class="v1">' + (h.avgCost > 0 ? fmtPrice(h.avgCost, h.type) : '--') + '</span><span class="v2">' + (h.shares > 0 ? fmtCompact(h.shares) : '--') + '</span></div>' +
     '<div class="hg-cell n">' + (day ? '<span class="v1 ' + cls(day.pl) + '">' + fmtSigned(day.pl) + '</span><span class="v2 ' + cls(day.pl) + '">' + fmtPct(day.pct) + '</span>' : '<span class="v1">--</span><span class="v2">--</span>') + '</div>' +
     '<div class="hg-cell hold-ops"><button class="btn chip buy" data-act="buy">买</button><button class="btn chip sell" data-act="sell">卖</button></div>' +
   '</div>';
@@ -1340,7 +1344,7 @@ function renderTransactions() {
     const h = getHolding(t.holdingId) || {};
     const type = h.type || 'etf';
     const op = opInfo(t);
-    return '<tr data-id="' + t.id + '">' +
+    return '<tr data-id="' + t.id + '"' + (t.flag ? ' class="tx-flag"' : '') + '>' +
       '<td class="num">' + (mqMobile.matches ? esc(shortDate(t.date)) : esc(t.date)) + '</td>' +
       '<td class="' + op.c + '">' + op.txt + '</td>' +
       '<td class="num">' + esc(h.code || '') + '</td>' +
@@ -2772,13 +2776,14 @@ function csvCell(v) {
 function exportCsv() {
   const rows = txRows();
   if (!rows.length) { toast('暂无流水可导出'); return; }
-  const lines = [['日期', '操作', '代码', '名称', '单价', '数量(股)', '金额', '手续费', '备注']];
+  const lines = [['日期', '操作', '代码', '名称', '单价', '数量(股)', '金额', '手续费', '备注', '标记']];
   rows.forEach(t => {
     const h = getHolding(t.holdingId) || {};
     const sign = t.type === 'buy' ? 1 : -1;
     lines.push([
       t.date, opInfo(t).txt, h.code || '', h.name || '',
-      t.price, sign * t.shares, (sign * t.amount).toFixed(2), t.fee.toFixed(2), t.note || ''
+      t.price, sign * t.shares, (sign * t.amount).toFixed(2), t.fee.toFixed(2), t.note || '',
+      t.flag ? '是' : ''
     ]);
   });
   const csv = '\uFEFF' + lines.map(r => r.map(csvCell).join(',')).join('\r\n');
@@ -2821,7 +2826,8 @@ function normalizeImport(data) {
     fee: Number(t.fee) || 0,
     date: String(t.date || ''),
     note: String(t.note || ''),
-    clearance: !!t.clearance
+    clearance: !!t.clearance,
+    flag: !!t.flag
   }));
   const plans = (Array.isArray(data.plans) ? data.plans : []).map(pl => {
     const w = {};
@@ -2994,11 +3000,11 @@ const DCA_BAR_RATIO = 0.46;   /* 桌面：需要横向滚动留白，柱不能�
 const DCA_BAR_RATIO_M = 0.62; /* 手机：宽度已铺满、不再滚动，可以放心加粗 */
 const DCA_MIN_W = 640;    /* 图表最小总宽：标的少时也不塌成一条窄带，多余部分留白 */
 /* 画布总高 = PAD_T + plotH(242) + PAD_B。改这三个数必须保持 plotH=242，见上方铁律。 */
-const DCA_H = 354;        /* 360→354：绘图区仍为 242px（见铁律），画布自身矮 6px */
+const DCA_H = 370;        /* v0.27.0：柱下加第 4 行「成本」⇒ 画布 +16px；绘图区仍 242px（见铁律） */
 const DCA_PAD_L = 92;     /* 左侧刻度留白：够放 "−¥10,000" */
 const DCA_PAD_R = 24;
 const DCA_PAD_T = 8 + 4 + 2 * 14;  /* =40：画布顶余量8 + 标签离线4 + 预留 2 行标签 2×14 */
-const DCA_PAD_B = 72;     /* 底部 3 行文字(名称/盈亏/收益率)，v0.23.0 的 4 行去掉「超配」行 */
+const DCA_PAD_B = 88;     /* v0.27.0：底部 4 行文字(名称/盈亏/收益率/成本)；72+16，与 DCA_H 同步 +16 保 plotH=242 */
 const DCA_EPS = 0.005;    /* 金额判定容差，与旧卡片一致 */
 const DCA_MIN_SEG = 4;    /* 任何柱段的最低可见高度(px)；不足则按 4px 画，红绿对称 */
 const DCA_MIN_LINE_GAP = 6; /* 负侧辅助线距 0 轴不足此值就不画（两条线会糊成一条） */
@@ -3297,6 +3303,9 @@ function dcaChartSVG(rows) {
       (x.hasPL ? fmtIntSigned(x.pl) : '--') + '</text>');
     s.push('<text x="' + cx.toFixed(1) + '" y="' + (plotBot + 50) + '" ' + TXT + ' fill="' + plc + '">' +
       (x.pct != null ? fmtPct(x.pct) : '--') + '</text>');
+    /* v0.27.0：柱下第 4 行 = 总成本（与「目标/待投」同口径：列宽够用全称，否则万单位） */
+    s.push('<text x="' + cx.toFixed(1) + '" y="' + (plotBot + 66) + '" ' + TXT + ' fill="var(--muted)">' +
+      '成本 ' + amt(x.cost) + '</text>');
     s.push('</g>');
   });
   s.push('</svg>');
@@ -3483,10 +3492,9 @@ function allocRows(plan, totalMV) {
       color: ALLOC_COLORS[i % ALLOC_COLORS.length], idx: i,
       w: r.w, a: a, mv: r.mv, cost: r.cost,
       dev: dev, over: Math.abs(dev) > thr,
-      devValue: totalMV > 0 ? dev / 100 * totalMV : 0,
-      /* 超配成本 = 已投入成本 − 期末目标金额 × 时间进度；正数=多投，负数=少投。
-         Σ超配成本 ≠ 0（Σ成本 ≠ Σ期末目标），这是"钱还没投完"的量，不能当偏离看。 */
-      overCost: r.cost - targetTotal * r.w / 100 * tp,
+      /* v0.27.0：v0.22.0 的「超配市值 / 超配成本」概念整段删除（用户裁定以后不用）。
+         新增 pl = 持仓盈亏金额，供环心「市值/成本/总盈亏」显示。 */
+      pl: pl ? pl.pl : null,
       rate: pl && Number.isFinite(pl.pct) ? pl.pct : null
     };
   });
@@ -3494,8 +3502,7 @@ function allocRows(plan, totalMV) {
     thr: thr, totalMV: totalMV, rowsCost: rowsCost, rows: rows, tp: tp, targetTotal: targetTotal,
     sumA: rows.reduce((s, r) => s + r.a, 0),
     overCount: rows.filter(r => r.over).length,
-    sumDev: rows.reduce((s, r) => s + r.dev, 0),
-    sumDevValue: rows.reduce((s, r) => s + r.devValue, 0)
+    sumDev: rows.reduce((s, r) => s + r.dev, 0)
   };
 }
 function allocPt(cx, cy, r, deg) {
@@ -3548,36 +3555,47 @@ function allocRingSVG(A, selId) {
     }
     acc += aDeg;
   });
-  /* 环心：总市值（整数、无 ¥，与表格三列口径一致）+ 一行小字说明这是什么数 */
-  const center = A.totalMV > 0
-    ? '<text x="100" y="94" text-anchor="middle" font-size="15" font-weight="700" fill="var(--text)">' +
+  /* 环心（v0.27.0）：选中某标的 → 该标的 市值/成本/总盈亏 三行（缩略数，盈亏红绿）；
+     未选中或「全部」→ 仍显示总市值（整数、无 ¥）。 */
+  const cSel = selId ? rows.find(r => r.key === selId) : null;
+  let center = '';
+  if (cSel) {
+    const plColor = cSel.pl > 0 ? 'var(--up)' : cSel.pl < 0 ? 'var(--down)' : 'var(--muted)';
+    const line = (yy, label, val, color) =>
+      '<text x="100" y="' + yy + '" text-anchor="middle" font-size="10.5">' +
+        '<tspan fill="var(--muted)">' + label + ' </tspan>' +
+        '<tspan fill="' + color + '" font-weight="700">' + esc(val) + '</tspan></text>';
+    center = line(86, '市值', fmtCompact(cSel.mv), 'var(--text)') +
+      line(102, '成本', fmtCompact(cSel.cost), 'var(--text)') +
+      line(118, '盈亏', cSel.pl == null ? '--' : fmtCompact(cSel.pl), plColor);
+  } else if (A.totalMV > 0) {
+    center = '<text x="100" y="94" text-anchor="middle" font-size="15" font-weight="700" fill="var(--text)">' +
       esc(allocNum(A.totalMV)) + '</text>' +
-      '<text x="100" y="110" text-anchor="middle" font-size="9" fill="var(--muted)">总市值</text>'
-    : '';
+      '<text x="100" y="110" text-anchor="middle" font-size="9" fill="var(--muted)">总市值</text>';
+  }
   return '<svg class="alloc-ring" viewBox="0 0 200 200" role="img" aria-label="市值分布环图">' +
     p.join('') + center + '</svg>';
 }
-/* 金额显示：v0.22.1 起「当前市值 / 超配市值 / 超配成本」三列去掉 ¥ 前缀与小数字。
-   同一列里数字位数一多，¥ 和小数点会挤在一起把列撑宽、也读不出量级。
-   单位靠表头与全局语境（应用内金额一律人民币），不再逐格重复。 */
+/* 金额显示（v0.22.1 起无 ¥、无小数；单位靠表头与全局语境，应用内金额一律人民币）。 */
 function allocNum(v) {
   return (Number(v) || 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 });
 }
-function allocSign(v) {
-  const x = Number(v) || 0;
-  return (x > 0 ? '+' : x < 0 ? '-' : '') + allocNum(Math.abs(x));
+/* v0.27.0：偏离由「+X%/−X%」改为「多了 X% / 少了 X%」，更直观。±0.005 内视为持平。 */
+function allocDev(dev) {
+  const d = Number(dev) || 0;
+  if (d > 0.005) return '多了 ' + d.toFixed(2) + '%';
+  if (d < -0.005) return '少了 ' + (-d).toFixed(2) + '%';
+  return '持平';
 }
-/* 标的明细表（v0.22.0）：6 列 = 标的 / 市值占比 / 偏离 / 当前市值 / 超配市值 / 超配成本。
+/* 标的明细表（v0.27.0）：4 列 = 标的 / 市值占比 / 目标配置 / 偏离。
    行色块与环上扇区同色，环与表在同一视觉轴上（环在左、表在右），一一对应。
-   超阈值行的超配市值与超配成本转琥珀橙加粗（--warn）：本应用红色是"上涨"语义，
-   超配不是"涨"，用红色会被误读为利好。
-   v0.22.1：环与表双向联动 —— 点扇区高亮对应行，点行高亮对应扇区。
-   选中态只存内存变量 allocSelId，不落 localStorage（避免下次进来还残留高亮）。 */
+   超阈值行的偏离转琥珀橙加粗（--warn）：本应用红色是"上涨"语义，超配不是"涨"。
+   环与表双向联动：点扇区高亮对应行，点行高亮对应扇区；选中态只存内存 allocSelId。
+   金额（市值/成本/盈亏）不再进表格，改由环心显示（见 allocRingSVG）。 */
 function allocTableHTML(A, selId) {
   const cell = (v, over) => '<td class="num' + (over ? ' ov' : '') + '">' + v + '</td>';
   return '<div class="alloc-scroll"><table class="alloc-tbl' + (selId ? ' has-sel' : '') + '"><thead><tr>' +
-    '<th class="c-name">标的</th><th>市值占比</th><th>偏离</th><th>当前市值</th>' +
-    '<th>超配市值</th><th>超配成本</th>' +
+    '<th class="c-name">标的</th><th>市值占比</th><th>目标配置</th><th>偏离</th>' +
     '</tr></thead><tbody>' +
     A.rows.map(r => {
       const on = selId && r.key === selId;
@@ -3591,11 +3609,8 @@ function allocTableHTML(A, selId) {
         (r.outside ? '<span class="tag-out">计划外</span>' : '') +
       '</td>' +
       cell(r.a.toFixed(2) + '%', false) +
-      /* 偏离用 % 而不是 BP/pp：用户要的是"占比差多少个百分点"，BP 是术语不是人话 */
-      cell(allocSign(r.dev) + '%', r.over) +
-      cell(allocNum(r.mv), false) +
-      cell(allocSign(r.devValue), r.over) +
-      cell(allocSign(r.overCost), r.over) +
+      cell(r.w > 0 ? r.w.toFixed(1) + '%' : '—', false) +
+      cell(allocDev(r.dev), r.over) +
       '</tr>';
     }).join('') +
     '</tbody></table></div>';
@@ -3621,19 +3636,19 @@ function allocMobileHTML(A, selId) {
       '<div class="alloc-info">' + info + '</div>' +
     '</div></div>';
 }
-/* 「全部」汇总面板：总市值 / 总目标 / 总成本 / 时间进度 / 超配欠配成本（符号区分，与表格同口径） */
+/* 「全部」汇总面板（v0.27.0）：总市值 / 总目标 / 总成本 / 时间进度。
+   「超配/欠配成本」行随该概念一并删除。 */
 function allocAllInfoHTML(A) {
-  const sumOverCost = A.rows.reduce((s, r) => s + r.overCost, 0);
   const row = (k, v, cls) => '<div class="li"><span class="k">' + k + '</span><span class="v' +
     (cls ? ' ' + cls : '') + '">' + v + '</span></div>';
   return row('总市值', allocNum(A.totalMV)) +
     row('总目标', allocNum(A.targetTotal)) +
     row('总成本', allocNum(A.rowsCost)) +
-    row('时间进度', (A.tp * 100).toFixed(2) + '%') +
-    row('超配/欠配成本', allocSign(sumOverCost), sumOverCost > 0 ? 'ov' : '');
+    row('时间进度', (A.tp * 100).toFixed(2) + '%');
 }
-/* 单只标的竖排信息：场外·计划外·已清仓 标签独立成行置顶（v0.25.1），
-   其下 标的(色块+名称，不含数字编号) / 市值占比 / 偏离 / 当前市值 / 超配市值 / 超配成本。 */
+/* 单只标的竖排信息（v0.27.0）：场外·计划外·已清仓 标签独立成行置顶（v0.25.1），
+   其下 标的(色块+名称，不含数字编号) / 市值占比 / 目标配置 / 偏离。
+   市值/成本/盈亏 不再进右侧信息，改由环心显示（见 allocRingSVG）。 */
 function allocOneInfoHTML(r) {
   if (!r) return '';
   const tags = (r.cleared ? '<span class="badge-cleared">已清仓</span>' : '') +
@@ -3641,17 +3656,15 @@ function allocOneInfoHTML(r) {
     (r.outside ? '<span class="tag-out">计划外</span>' : '');
   const row = (k, v, cls) => '<div class="li"><span class="k">' + k + '</span><span class="v' +
     (cls ? ' ' + cls : '') + '">' + v + '</span></div>';
-  /* v0.25.1：标签（场外/计划外/已清仓）单独一行放在最上面；
+  /* 标签（场外/计划外/已清仓）单独一行放在最上面；
      「标的」行只留 色块 + 名称，不再显示数字编号，字号与其余各行一致（继承 .alloc-info）。 */
   const tagRow = tags ? '<div class="li li-tags">' + tags + '</div>' : '';
   return tagRow +
     '<div class="li li-head"><span class="k">标的</span><span class="v">' +
       '<i class="swatch" style="background:' + r.color + '"></i>' + esc(r.name) + '</span></div>' +
     row('市值占比', r.a.toFixed(2) + '%') +
-    row('偏离', allocSign(r.dev) + '%', r.over ? 'ov' : '') +
-    row('当前市值', allocNum(r.mv)) +
-    row('超配市值', allocSign(r.devValue), r.over ? 'ov' : '') +
-    row('超配成本', allocSign(r.overCost), r.over ? 'ov' : '');
+    row('目标配置', r.w > 0 ? r.w.toFixed(1) + '%' : '—') +
+    row('偏离', allocDev(r.dev), r.over ? 'ov' : '');
 }
 function renderAlloc() {
   const box = el('allocContent');
@@ -3668,7 +3681,7 @@ function renderAlloc() {
     return;
   }
   if (!(totalMV > 0)) {
-    box.innerHTML = '<div class="empty">当前总市值为 0，市值占比无法计算。<br>市值口径的偏离与超配市值需要非零总市值才有意义。</div>';
+    box.innerHTML = '<div class="empty">当前总市值为 0，市值占比无法计算。<br>市值占比与偏离需要非零总市值才有意义。</div>';
     return;
   }
   /* v0.25.0：手机端走「导航+环+竖排信息」，并把「全部」作为默认选中；
@@ -4523,12 +4536,44 @@ function bindHoldingsClick() {
     openTradeOrAction(card.dataset.id, btn.dataset.act);
   });
 }
+let txLastTap = { id: '', t: 0 };
+/* v0.27.0：翻转某条流水的标记（浅蓝底，用于区分短线/T 操作），持久化到 state 并重绘 */
+function toggleTxFlag(id) {
+  const t = state.transactions.find(x => x.id === id);
+  if (!t) return;
+  t.flag = !t.flag;
+  save();
+  renderTransactions();
+}
 function bindTxClick() {
   el('txBody').addEventListener('click', e => {
     const del = e.target.closest('[data-del]');
     if (del) deleteTx(del.dataset.del);
     const edit = e.target.closest('[data-edit]');
     if (edit) openEditTxModal(edit.dataset.edit);
+  });
+  /* 双击（桌面）/ 双点（手机）切换整行标记；单击不处理。
+     触屏用 touchend 自行计时（不依赖 dblclick），命中后 preventDefault 抑制合成 click，
+     并置 txLastTap 时间戳让随后的 dblclick 去重，避免手机端切换两次。 */
+  el('txBody').addEventListener('dblclick', e => {
+    if (e.target.closest('[data-edit],[data-del]')) return;
+    const tr = e.target.closest('tr[data-id]');
+    if (!tr) return;
+    if (txLastTap.id === tr.dataset.id && Date.now() - txLastTap.t < 500) return;
+    toggleTxFlag(tr.dataset.id);
+  });
+  el('txBody').addEventListener('touchend', e => {
+    if (e.target.closest('[data-edit],[data-del]')) return;
+    const tr = e.target.closest('tr[data-id]');
+    if (!tr) return;
+    const id = tr.dataset.id, now = Date.now();
+    if (txLastTap.id === id && now - txLastTap.t < 350) {
+      txLastTap = { id: '', t: 0 };
+      toggleTxFlag(id);
+      if (e.cancelable) e.preventDefault();
+    } else {
+      txLastTap = { id: id, t: now };
+    }
   });
 }
 function openTradeOrAction(id, act) {
