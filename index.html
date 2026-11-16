@@ -719,7 +719,7 @@ const SUPABASE_TABLE = 'investment_data';
 const SUPABASE_URL = 'https://gqjbtbxtkiptjeryqawd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_xAbx5HkUJCMssWBtPWzgCw_9UDQNrc2';
 const MONITOR_SECRET = 'mon_19850915!888888'; // 定投参考：与 Supabase Edge Function 的 MONITOR_SECRET 一致（防滥用共享串，非保密）
-const BUILD = 'v0.28.4-20261116'; // 页面构建标识：部署后看页脚/右上角即可确认浏览器跑的是哪一版
+const BUILD = 'v0.28.5-20261116'; // 页面构建标识：部署后看页脚/右上角即可确认浏览器跑的是哪一版
 const PRE_ADOPT_KEY = 'invPlatformData_v1_pre_adopt'; // 云端覆盖本地前的自动快照，可手动找回
 const FEE_RATE_ETF = 0.0001;
 const FEE_RATE_STOCK = 0.00013;
@@ -2665,6 +2665,14 @@ function initKlineSwipe(card, hs, sel) {
     renderKlines();
   });
 }
+function klineTxsOf(h, sub) {
+  const hideT = !!(state.settings && state.settings.hideTKline);
+  return state.transactions
+    .filter(t => t.holdingId === h.id && (t.type === 'buy' || t.type === 'sell'))
+    .filter(t => !(hideT && txMarkOf(t) === 'T'))
+    .filter(t => t.date >= sub[0].date && t.date <= sub[sub.length - 1].date)
+    .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+}
 function klineCardHTML(h) {
   const lastBuy = lastBuyPriceOf(h);
   const cp = h.currentPrice > 0 ? h.currentPrice : null;
@@ -2683,11 +2691,7 @@ function klineCardHTML(h) {
       svgBlock = '<div class="kli-empty">K线数据不足</div>';
     } else {
       const sub = view.slice(klineI0Of(h, view));
-      const txs = state.transactions
-        .filter(t => t.holdingId === h.id && (t.type === 'buy' || t.type === 'sell'))
-        .filter(t => !(state.settings && state.settings.hideTKline && txMarkOf(t) === 'T'))
-        .filter(t => t.date >= sub[0].date && t.date <= sub[sub.length - 1].date)
-        .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+      const txs = klineTxsOf(h, sub);
       svgBlock = '<svg class="kli-svg" viewBox="0 0 520 330" xmlns="http://www.w3.org/2000/svg"><title>左右拖动平移时间窗口</title>' +
         klineSVG(h, sub, txs, lastBuy, cp) + '</svg>';
       tlBlock = '<svg class="kli-tl" viewBox="0 0 520 46" xmlns="http://www.w3.org/2000/svg"><title>拖动左端压缩时间范围，双击恢复全月</title>' +
@@ -2875,10 +2879,7 @@ function initKlineScrub(card, h) {
     if (!svgM.isConnected || !svgT.isConnected) return;
     const i0 = klineI0Of(h, view);
     const sub = view.slice(i0);
-    const txs = state.transactions
-      .filter(t => t.holdingId === h.id && (t.type === 'buy' || t.type === 'sell'))
-      .filter(t => t.date >= sub[0].date && t.date <= sub[sub.length - 1].date)
-      .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+    const txs = klineTxsOf(h, sub);
     svgM.innerHTML = klineSVG(h, sub, txs, lastBuyPriceOf(h), h.currentPrice > 0 ? h.currentPrice : null);
     svgT.innerHTML = klineTimelineSVG(h, view);
   };
