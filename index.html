@@ -490,7 +490,7 @@ body{
   .topbar{flex-wrap:wrap}
   .topbar h1{width:100%;margin-bottom:8px}
   .topbar-actions{width:100%;margin-left:0;flex-wrap:wrap;gap:8px}
-  #btnExportJson,#btnImportJson{display:inline-flex}
+  #quoteStatus,#btnExportJson,#btnImportJson{display:none}
   .btn{padding:9px 14px;font-size:14px}
   .btn.chip{padding:7px 12px;font-size:13px}
   .build-tag{display:none}
@@ -712,7 +712,7 @@ const SUPABASE_TABLE = 'investment_data';
 const SUPABASE_URL = 'https://gqjbtbxtkiptjeryqawd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_xAbx5HkUJCMssWBtPWzgCw_9UDQNrc2';
 const MONITOR_SECRET = 'mon_19850915!888888'; // 定投参考：与 Supabase Edge Function 的 MONITOR_SECRET 一致（防滥用共享串，非保密）
-const BUILD = 'v0.28.2-20261116'; // 页面构建标识：部署后看页脚/右上角即可确认浏览器跑的是哪一版
+const BUILD = 'v0.28.3-20261116'; // 页面构建标识：部署后看页脚/右上角即可确认浏览器跑的是哪一版
 const PRE_ADOPT_KEY = 'invPlatformData_v1_pre_adopt'; // 云端覆盖本地前的自动快照，可手动找回
 const FEE_RATE_ETF = 0.0001;
 const FEE_RATE_STOCK = 0.00013;
@@ -2739,17 +2739,20 @@ function klineSVG(h, view, txs, lastBuy, cp) {
     }
   }
 
-  /* 交易标记 B/S + 下方两行小字 */
+  /* 交易标记 B/S + 下方两行小字（v0.28.3：字母恢复蓝/黄；文字深色；短线=实心黄点，未标记=实心黑点，T=空心圈） */
   const drawMark = (t, x) => {
     const cy = Y(t.price);
     const isBuy = t.type === 'buy';
-    const isShort = txMarkOf(t) === 'S';
+    const mark = txMarkOf(t);
+    const isShort = mark === 'S';
+    const isT = mark === 'T';
     const col = isBuy ? K_BLUE : K_YELLOW;
-    const txtCol = isShort ? '#f59e0b' : '#6b7280';
-    svg += '<circle cx="' + x.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + PU(2.3) + '" fill="#fff" stroke="' + col + '" stroke-width="' + PU(1) + '"/>';
-    svg += '<text x="' + x.toFixed(1) + '" y="' + (cy - PU(5)).toFixed(1) + '" text-anchor="middle" font-size="' + PU(9) + '" font-weight="700" fill="' + (isShort ? '#f59e0b' : col) + '">' + (isBuy ? 'B' : 'S') + '</text>';
-    svg += '<text x="' + x.toFixed(1) + '" y="' + (cy + PU(9)).toFixed(1) + '" text-anchor="middle" font-size="' + PU(7.5) + '" fill="' + txtCol + '">' + esc(fmtPrice(t.price, h.type)) + '</text>';
-    svg += '<text x="' + x.toFixed(1) + '" y="' + (cy + PU(13.5)).toFixed(1) + '" text-anchor="middle" font-size="' + PU(7.5) + '" fill="' + txtCol + '">' + (isBuy ? '+' : '-') + esc(fmtShares(t.shares, h.type)) + '股</text>';
+    const dotFill = isShort ? K_YELLOW : (isT ? '#fff' : 'var(--text)');
+    const dotStroke = isT ? ' stroke="' + col + '" stroke-width="' + PU(1) + '"' : '';
+    svg += '<circle cx="' + x.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + PU(2.3) + '" fill="' + dotFill + '"' + dotStroke + '/>';
+    svg += '<text x="' + x.toFixed(1) + '" y="' + (cy - PU(5)).toFixed(1) + '" text-anchor="middle" font-size="' + PU(9) + '" font-weight="700" fill="' + col + '">' + (isBuy ? 'B' : 'S') + '</text>';
+    svg += '<text x="' + x.toFixed(1) + '" y="' + (cy + PU(9)).toFixed(1) + '" text-anchor="middle" font-size="' + PU(7.5) + '" fill="var(--text)">' + esc(fmtPrice(t.price, h.type)) + '</text>';
+    svg += '<text x="' + x.toFixed(1) + '" y="' + (cy + PU(13.5)).toFixed(1) + '" text-anchor="middle" font-size="' + PU(7.5) + '" fill="var(--text)">' + (isBuy ? '+' : '-') + esc(fmtShares(t.shares, h.type)) + '股</text>';
   };
   if (txs.length) {
     const byBar = {};
