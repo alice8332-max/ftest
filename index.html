@@ -184,6 +184,8 @@ body{
 .tx-stats{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-left:4px}
 .tx-stats .warn{color:var(--warn);font-weight:700;cursor:help}
 .tx-hide{display:flex;align-items:center;gap:4px;font-size:13px;color:var(--muted);cursor:pointer;user-select:none;white-space:nowrap}
+.tx-hide-head{display:none}
+.th-hideT{white-space:nowrap}
 .overlay{
   position:fixed;inset:0;background:rgba(15,23,42,.45);
   display:flex;align-items:center;justify-content:center;z-index:100;
@@ -516,9 +518,9 @@ body{
   /* v0.25.0：手机端定投图只留画布，图例与说明不显示 */
   .dca-legend{display:none}
   .toolbar{flex-wrap:wrap}
-  .toolbar .tool-label:first-of-type,
+  .toolbar .tool-label,
   #sortDate,#sortCode,#btnExportCsv{display:none}
-  #txFilter{flex:1;max-width:240px;font-size:16px}
+  #txFilter{flex:0 0 88px;width:88px;max-width:88px;font-size:14px;padding-left:6px;padding-right:18px}
   .tx-table{min-width:0}
   .tx-table th:nth-child(3),.tx-table td:nth-child(3),
   .tx-table th:nth-child(4),.tx-table td:nth-child(4),
@@ -527,7 +529,12 @@ body{
   .tx-table th:nth-child(10),.tx-table td:nth-child(10){display:none}
   .tx-table th,.tx-table td{padding:8px 4px}
   .tx-table .link-edit{display:none}
-  .tx-stats{width:100%;margin-left:0;order:5}
+  #view-transactions .toolbar .grow{display:none}
+  .tx-hide-toolbar{display:none}
+  .tx-hide-head{display:flex;align-items:center;gap:3px;font-size:10.5px;white-space:nowrap}
+  .th-hideT{padding-left:2px;padding-right:2px}
+  .tx-stats{flex-direction:column;align-items:flex-start;gap:1px;width:auto;min-width:0;margin-left:0;font-size:11.5px;line-height:1.35;order:0}
+  .tx-stats>span{white-space:nowrap}
   /* v0.25.0：手机端资产配置改为「顶部导航 + 环 + 右侧竖排信息」，明细表不显示 */
   .alloc-main .alloc-scroll{display:none}
   .alloc-mob{display:block}
@@ -632,7 +639,7 @@ body{
       <button id="sortCode" class="btn chip">按代码</button>
       <span class="tool-label" style="margin-left:10px">筛选</span>
       <select id="txFilter"></select>
-      <label class="tx-hide" style="margin-left:6px"><input type="checkbox" id="hideTTx">隐藏T</label>
+      <label class="tx-hide tx-hide-toolbar" style="margin-left:6px"><input type="checkbox" id="hideTTx">隐藏T</label>
       <div class="tx-stats" id="txStats"></div>
       <div class="grow"></div>
       <button id="btnExportCsv" class="btn primary">导出CSV</button>
@@ -642,7 +649,7 @@ body{
         <thead>
           <tr>
             <th>日期</th><th>缩写</th><th>操作</th><th>代码</th><th>名称</th>
-            <th>单价</th><th>数量(股)</th><th>金额</th><th>手续费</th><th>备注</th><th></th>
+            <th>单价</th><th>数量(股)</th><th>金额</th><th>手续费</th><th>备注</th><th class="th-hideT"><label class="tx-hide tx-hide-head" title="隐藏T交易"><input type="checkbox" id="hideTTxHead">隐藏T</label></th>
           </tr>
         </thead>
         <tbody id="txBody"></tbody>
@@ -712,7 +719,7 @@ const SUPABASE_TABLE = 'investment_data';
 const SUPABASE_URL = 'https://gqjbtbxtkiptjeryqawd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_xAbx5HkUJCMssWBtPWzgCw_9UDQNrc2';
 const MONITOR_SECRET = 'mon_19850915!888888'; // 定投参考：与 Supabase Edge Function 的 MONITOR_SECRET 一致（防滥用共享串，非保密）
-const BUILD = 'v0.28.3-20261116'; // 页面构建标识：部署后看页脚/右上角即可确认浏览器跑的是哪一版
+const BUILD = 'v0.28.4-20261116'; // 页面构建标识：部署后看页脚/右上角即可确认浏览器跑的是哪一版
 const PRE_ADOPT_KEY = 'invPlatformData_v1_pre_adopt'; // 云端覆盖本地前的自动快照，可手动找回
 const FEE_RATE_ETF = 0.0001;
 const FEE_RATE_STOCK = 0.00013;
@@ -1439,9 +1446,12 @@ function txRows(ignoreHideT) {
 }
 
 function txStatsHTML() {
+  const inFilter = t => !txFilterCode || codeOf(t) === txFilterCode;
+  const inFilterH = h => !txFilterCode || h.code === txFilterCode;
   let tSum = 0;
   const tByH = {};
   state.transactions.forEach(t => {
+    if (!inFilter(t)) return;
     if (txMarkOf(t) === 'T') {
       tSum += (t.type === 'buy' ? 1 : -1) * (Number(t.amount) || 0);
       tByH[t.holdingId] = (tByH[t.holdingId] || 0) + (t.type === 'buy' ? 1 : -1) * (Number(t.shares) || 0);
@@ -1449,11 +1459,15 @@ function txStatsHTML() {
   });
   let tPairBad = false;
   Object.keys(tByH).forEach(k => { if (Math.abs(tByH[k]) > 1e-6) tPairBad = true; });
-  let tText = 'T仓盈亏 ' + (tSum < 0 ? '盈利 ' : tSum > 0 ? '亏损 ' : '') + '¥' + fmtMoney(Math.abs(tSum));
+  const profit = -tSum;
+  const tVal = (profit > 0 ? '+' : profit < 0 ? '-' : '') + fmtMoney(Math.abs(profit));
+  const tCls = profit > 0 ? 'up' : profit < 0 ? 'down' : '';
+  let tText = 'T仓盈亏 <span class="' + tCls + '">' + tVal + '</span>';
   if (tPairBad) tText += ' <span class="warn" title="配对问题：存在T标记股数未对平">!</span>';
   let shortShares = 0, holdShares = 0;
-  state.holdings.forEach(h => { if (h.type === 'fund' || h.cleared) return; holdShares += Number(h.shares) || 0; });
+  state.holdings.forEach(h => { if (!inFilterH(h) || h.type === 'fund' || h.cleared) return; holdShares += Number(h.shares) || 0; });
   state.transactions.forEach(t => {
+    if (!inFilter(t)) return;
     const h = getHolding(t.holdingId);
     if (!h || h.type === 'fund' || h.cleared) return;
     if (txMarkOf(t) === 'S') shortShares += (t.type === 'buy' ? 1 : -1) * (Number(t.shares) || 0);
@@ -1468,6 +1482,7 @@ function renderTransactions() {
   el('sortCode').textContent = '按代码' + (txSort.key === 'code' ? (txSort.dir === 1 ? ' ↑' : ' ↓') : '');
   const statsEl = el('txStats'); if (statsEl) statsEl.innerHTML = txStatsHTML();
   const hideT = el('hideTTx'); if (hideT) hideT.checked = !!(state.settings && state.settings.hideT);
+  const hideTH = el('hideTTxHead'); if (hideTH) hideTH.checked = !!(state.settings && state.settings.hideT);
   const rows = txRows();
   const tbody = el('txBody');
   if (!rows.length) {
@@ -1499,10 +1514,12 @@ function renderTransactions() {
 }
 function renderFilterOptions() {
   const sel = el('txFilter');
-  sel.innerHTML = '<option value="">全部标的</option>' + sortedHoldings().map(h =>
-    '<option value="' + esc(h.code) + '"' + (h.code === txFilterCode ? ' selected' : '') + '>' +
-    esc(h.code) + ' ' + esc(h.name) + '</option>'
-  ).join('');
+  const isM = mqMobile.matches;
+  sel.innerHTML = '<option value="">' + (isM ? '全部' : '全部标的') + '</option>' + sortedHoldings().map(h => {
+    const label = isM ? (h.abbr || h.code) : (h.code + ' ' + h.name);
+    return '<option value="' + esc(h.code) + '"' + (h.code === txFilterCode ? ' selected' : '') + '>' +
+      esc(label) + '</option>';
+  }).join('');
 }
 
 
@@ -2748,7 +2765,7 @@ function klineSVG(h, view, txs, lastBuy, cp) {
     const isT = mark === 'T';
     const col = isBuy ? K_BLUE : K_YELLOW;
     const dotFill = isShort ? K_YELLOW : (isT ? '#fff' : 'var(--text)');
-    const dotStroke = isT ? ' stroke="' + col + '" stroke-width="' + PU(1) + '"' : '';
+    const dotStroke = isT ? ' stroke="' + col + '" stroke-width="' + PU(1) + '"' : ' stroke="#fff" stroke-width="' + PU(0.6) + '"';
     svg += '<circle cx="' + x.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + PU(2.3) + '" fill="' + dotFill + '"' + dotStroke + '/>';
     svg += '<text x="' + x.toFixed(1) + '" y="' + (cy - PU(5)).toFixed(1) + '" text-anchor="middle" font-size="' + PU(9) + '" font-weight="700" fill="' + col + '">' + (isBuy ? 'B' : 'S') + '</text>';
     svg += '<text x="' + x.toFixed(1) + '" y="' + (cy + PU(9)).toFixed(1) + '" text-anchor="middle" font-size="' + PU(7.5) + '" fill="var(--text)">' + esc(fmtPrice(t.price, h.type)) + '</text>';
@@ -4681,6 +4698,7 @@ function bindEvents() {
   };
   el('txFilter').onchange = e => { txFilterCode = e.target.value; renderTransactions(); };
   if (el('hideTTx')) el('hideTTx').onchange = e => { state.settings.hideT = !!e.target.checked; save(); renderTransactions(); };
+  if (el('hideTTxHead')) el('hideTTxHead').onchange = e => { state.settings.hideT = !!e.target.checked; save(); renderTransactions(); };
 }
 function bindKlineKeys() {
   document.addEventListener('keydown', e => {
