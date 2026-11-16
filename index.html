@@ -804,6 +804,18 @@ function calcFee(type, isBuy, amount) {
   return round2(fee);
 }
 
+
+function normalizeAbbr(v) {
+  const t = String(v == null ? '' : v).replace(/\s+/g, '').trim();
+  return Array.from(t).slice(0, 2).join('');
+}
+function txMarkOf(t) {
+  if (!t) return '';
+  if (t.mark === 'S') return 'S';
+  if (t.mark === 'T' || t.flag) return 'T';
+  return '';
+}
+
 function defaultState() {
   return {
     holdings: SEED.map((s, i) => ({
@@ -847,9 +859,16 @@ function loadState() {
   let raw = null;
   try { raw = localStorage.getItem(STORE_KEY); } catch (e) { return defaultState(); }
   if (!raw) return defaultState();
+  let data;
   try {
-    const data = JSON.parse(raw);
+    data = JSON.parse(raw);
     if (!data || !Array.isArray(data.holdings)) throw new Error('bad data');
+  } catch (e) {
+    try { localStorage.setItem(STORE_KEY + '_corrupted_backup', raw); } catch (e2) {}
+    corruptBackup = true;
+    return defaultState();
+  }
+  try {
     data.transactions = Array.isArray(data.transactions) ? data.transactions : [];
     data.plans = Array.isArray(data.plans) ? data.plans : [];
     data.activePlanId = data.activePlanId || null;
@@ -858,14 +877,12 @@ function loadState() {
     reorderLegacySeed(data);
     migrateFund(data);
     (data.holdings||[]).forEach(h=>{ h.abbr = normalizeAbbr(h.abbr); });
-    (data.transactions||[]).forEach(t=>{ const m=(t.mark==='S')?'S':(t.flag||t.mark==='T')?'T':''; t.mark=m; t.flag=(m==='T'); });
+    (data.transactions||[]).forEach(t=>{ const m = txMarkOf(t); t.mark = m; t.flag = (m === 'T'); });
     normalizeSettings(data);
-    return data;
   } catch (e) {
-    try { localStorage.setItem(STORE_KEY + '_corrupted_backup', raw); } catch (e2) {}
-    corruptBackup = true;
-    return defaultState();
+    console.error('loadState normalize failed', e);
   }
+  return data;
 }
 function save() {
   localStorage.setItem(STORE_KEY, JSON.stringify(state));
