@@ -4721,9 +4721,9 @@ async function startCloudSession() {
     sessionReady = true;
     el('btnLogout').style.display = '';
     const cloudHasData = !!(row && row.data && typeof row.data === 'object' && !Array.isArray(row.data) && (Array.isArray(row.data.holdings) || Array.isArray(row.data.transactions) || row.data.settings));
-    state = loadState();
     syncQuoteSel();
     if (!cloudHasData) {
+      state = loadState();
       syncMeta.baseRevision = row ? (Number(row.revision) || 0) : 0;
       if (!row) {
         const ins = await sb.from(SUPABASE_TABLE)
@@ -4735,21 +4735,13 @@ async function startCloudSession() {
       saveSyncMeta();
       renderAll();
       await forcePush();
-    } else if (Number(row.revision) > syncMeta.baseRevision || (cloudHasData && !syncMeta.dirty && syncMeta.baseRevision === 0)) {
-      if (syncMeta.dirty && Number(row.revision) > syncMeta.baseRevision) {
-        renderAll();
-        conflictDialog({ revision: Number(row.revision), data: row.data });
-      } else if (!adoptRemote({ revision: Number(row.revision) || 0, data: row.data })) {
-        toast('云端数据异常，已使用本地缓存');
-        renderAll();
-      }
     } else {
-      if (Number(row.revision) < syncMeta.baseRevision) {
-        syncMeta.baseRevision = Number(row.revision);
-        saveSyncMeta();
+      // 以云端为准：云端有数据则覆盖本地（包括 localStorage/缓存）
+      if (!adoptRemote({ revision: Number(row.revision) || 0, data: row.data })) {
+        toast('云端数据异常，已使用本地缓存');
+        state = loadState();
+        renderAll();
       }
-      renderAll();
-      if (syncMeta.dirty) flushCloudPush();
     }
     bootRefresh();
     showCorruptDialogIfAny();
