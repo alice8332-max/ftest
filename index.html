@@ -320,6 +320,9 @@ body{
 .sync-dot.ok{background:var(--down)}
 .sync-dot.pending{background:var(--warn)}
 .sync-dot.err{background:var(--up)}
+/* v0.28.1：页面构建标识（诊断用，点击复制诊断 JSON） */
+.build-tag{font-size:10px;color:var(--muted);white-space:nowrap;cursor:pointer;user-select:none;padding:1px 2px;border-radius:4px}
+.build-tag:hover{background:rgba(0,0,0,.05)}
 /* ===== 行情来源状态（v0.26.0）===== */
 .quote-status{font-size:11px;color:var(--muted);white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}
 .quote-status.err{color:var(--up)}
@@ -566,6 +569,7 @@ body{
     <h1>投资管理平台</h1>
     <div class="topbar-actions">
       <span id="syncDot" class="sync-dot" title="本地模式（未配置云端）"></span>
+      <span id="buildTag" class="build-tag" title="页面构建标识（点击复制诊断信息）"></span>
       <button id="btnLogout" class="btn ghost" style="display:none" title="退出云端登录">退出</button>
       <button id="btnQuote" class="btn primary" title="从东方财富公开接口拉取全部 ETF 实时行情">⟳ 行情</button>
       <select id="quoteAuto" title="交易时段（工作日 9:30-15:00）自动刷新间隔">
@@ -699,6 +703,8 @@ const SUPABASE_TABLE = 'investment_data';
 const SUPABASE_URL = 'https://gqjbtbxtkiptjeryqawd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_xAbx5HkUJCMssWBtPWzgCw_9UDQNrc2';
 const MONITOR_SECRET = 'mon_19850915!888888'; // 定投参考：与 Supabase Edge Function 的 MONITOR_SECRET 一致（防滥用共享串，非保密）
+const BUILD = 'v0.28.1-20261116'; // 页面构建标识：部署后看页脚/右上角即可确认浏览器跑的是哪一版
+const PRE_ADOPT_KEY = 'invPlatformData_v1_pre_adopt'; // 云端覆盖本地前的自动快照，可手动找回
 const FEE_RATE_ETF = 0.0001;
 const FEE_RATE_STOCK = 0.00013;
 const FEE_MIN = 5;
@@ -731,6 +737,8 @@ let sessionReady = false;
 let pushTimer = null;
 let syncBusy = false;
 let syncMeta = { baseRevision: 0, dirty: false };
+let cloudDiag = { ok: null, revision: null, holdings: null, transactions: null, error: null, at: '' };
+let lastCloudError = '';
 
 function el(id) { return document.getElementById(id); }
 function uid() {
@@ -878,7 +886,6 @@ function loadState() {
     migrateFund(data);
     (data.holdings||[]).forEach(h=>{ h.abbr = normalizeAbbr(h.abbr); });
     (data.transactions||[]).forEach(t=>{ const m = txMarkOf(t); t.mark = m; t.flag = (m === 'T'); });
-    normalizeSettings(data);
   } catch (e) {
     console.error('loadState normalize failed', e);
   }
@@ -966,6 +973,10 @@ async function forcePush() {
 function applyRemoteState(norm, baseRev, okMsg) {
   clearTimeout(pushTimer);
   pushTimer = null;
+  try {
+    const prev = localStorage.getItem(STORE_KEY);
+    if (prev && prev !== JSON.stringify(norm)) localStorage.setItem(PRE_ADOPT_KEY, prev);
+  } catch (e) {}
   state = norm;
   syncMeta.baseRevision = Number(baseRev);
   syncMeta.dirty = false;
@@ -978,8 +989,41 @@ function applyRemoteState(norm, baseRev, okMsg) {
 }
 function adoptRemote(row) {
   try {
-    return applyRemoteState(normalizeImport(row.data), row.revision);
-  } catch (e) { return false; }
+    const ok = applyRemoteState(normalizeImport(row.data), row.revision);
+    cloudDiag = {
+      ok: true, revision: Number(row.revision) || 0,
+      holdings: Array.isArray(row.data.holdings) ? row.data.holdings.length : 0,
+      transactions: Array.isArray(row.data.transactions) ? row.data.transactions.length : 0,
+      error: null, at: new Date().toISOString()
+    };
+    lastCloudError = '';
+    return { ok: ok, error: null };
+  } catch (e) {
+    lastCloudError = (e && e.message) ? e.message : String(e || '未知错误');
+    console.error('[cloud] adopt failed', e);
+    cloudDiag = { ok: false, revision: null, holdings: null, transactions: null, error: lastCloudError, at: new Date().toISOString() };
+    return { ok: false, error: e };
+  }
+}
+function diagInfo() {
+  const s = (state && state.settings) ? state.settings : {};
+  return {
+    build: BUILD,
+    url: location.href,
+    online: !!navigator.onLine,
+    hasSdk: !!sb,
+    sessionReady: sessionReady,
+    syncMeta: { baseRevision: syncMeta.baseRevision, dirty: syncMeta.dirty },
+    cloud: cloudDiag,
+    lastCloudError: lastCloudError,
+    local: {
+      hasCache: !!localStorage.getItem(STORE_KEY),
+      hasPreAdopt: !!localStorage.getItem(PRE_ADOPT_KEY),
+      holdings: state ? state.holdings.length : 0,
+      transactions: state ? state.transactions.length : 0
+    },
+    settings: { hideT: !!s.hideT, hideTKline: s.hideTKline !== false }
+  };
 }
 async function handlePushConflict() {
   try {
@@ -1023,10 +1067,11 @@ async function pullIfNewer() {
     const r = rows && rows[0];
     if (error || !r || !r.data || !Array.isArray(r.data.holdings)) return;
     if (Number(r.revision) > syncMeta.baseRevision) {
-      adoptRemote({ revision: Number(r.revision), data: r.data });
-      toast('已同步其他设备的最新改动');
+      const res = adoptRemote({ revision: Number(r.revision), data: r.data });
+      if (res.ok) toast('已同步其他设备的最新改动');
+      else setSyncDot('err', '云端新数据解析失败，已保留本地（详见控制台）');
     }
-  } catch (e) {}
+  } catch (e) { lastCloudError = (e && e.message) ? e.message : String(e || '未知错误'); console.error('[cloud] pullIfNewer failed', e); }
 }
 
 function getHolding(id) { return state.holdings.find(h => h.id === id); }
@@ -1346,10 +1391,10 @@ function holdRowHTML(h, r, day) {
   '</div>';
 }
 
-function txRows() {
+function txRows(ignoreHideT) {
   let rows = state.transactions.map((t, i) => ({ t, i }));
   if (txFilterCode) rows = rows.filter(r => codeOf(r.t) === txFilterCode);
-  if (state.settings && state.settings.hideT) rows = rows.filter(r => txMarkOf(r.t) !== 'T');
+  if (!ignoreHideT && state.settings && state.settings.hideT) rows = rows.filter(r => txMarkOf(r.t) !== 'T');
   rows.sort((a, b) => {
     let r = 0;
     if (txSort.key === 'date') {
@@ -1388,7 +1433,7 @@ function txStatsHTML() {
   });
   const denom = holdShares - shortShares;
   let sp = '--';
-  if (Math.abs(denom) > 1e-9) { const pct = shortShares / denom * 100; sp = (pct > 0 ? '+' : '') + pct.toFixed(1) + '%'; }
+  if (denom > 1e-9) { const pct = shortShares / denom * 100; sp = (pct > 0 ? '+' : '') + pct.toFixed(1) + '%'; }
   return '<span>' + tText + '</span><span>短线占比 ' + sp + '</span>';
 }
 function renderTransactions() {
@@ -1532,6 +1577,7 @@ function fieldHTML(o) {
     (o.step ? ' step="' + o.step + '"' : '') +
     (o.min !== undefined ? ' min="' + o.min + '"' : '') +
     (o.readonly ? ' readonly' : '') +
+    (o.maxlen ? ' maxlength="' + o.maxlen + '"' : '') +
     (o.placeholder ? ' placeholder="' + esc(o.placeholder) + '"' : '') +
     '></div>';
 }
@@ -1851,6 +1897,8 @@ let lastQuoteErrToastAt = 0;
 
 function normalizeSettings(data) {
   const s = data.settings && typeof data.settings === 'object' ? data.settings : {};
+  s.hideT = !!s.hideT;
+  s.hideTKline = s.hideTKline !== false;
   const sec = Number(s.quoteAutoSec);
   if (QUOTE_INTERVALS.indexOf(sec) !== -1) {
     s.quoteAutoSec = sec;
@@ -2887,7 +2935,7 @@ function csvCell(v) {
 }
 
 function exportCsv() {
-  const rows = txRows();
+  const rows = txRows(true);
   if (!rows.length) { toast('暂无流水可导出'); return; }
   const lines = [['日期', '操作', '代码', '名称', '单价', '数量(股)', '金额', '手续费', '备注', '标记']];
   rows.forEach(t => {
@@ -4592,7 +4640,7 @@ function bindEvents() {
   };
   el('txFilter').onchange = e => { txFilterCode = e.target.value; renderTransactions(); };
   if (el('hideTTx')) el('hideTTx').onchange = e => { state.settings.hideT = !!e.target.checked; save(); renderTransactions(); };
-  if (el('hideTKline')) { el('hideTKline').checked = !!(state.settings && state.settings.hideTKline); el('hideTKline').onchange = e => { state.settings.hideTKline = !!e.target.checked; save(); renderKlines(); }; }
+  if (el('hideTKline')) { el('hideTKline').checked = !!(state && state.settings && state.settings.hideTKline); el('hideTKline').onchange = e => { state.settings.hideTKline = !!e.target.checked; save(); renderKlines(); }; }
 }
 function bindKlineKeys() {
   document.addEventListener('keydown', e => {
@@ -4710,6 +4758,7 @@ function localBoot() {
   renderAll();
   bootRefresh();
   showCorruptDialogIfAny();
+  console.log('[boot] local', diagInfo());
 }
 async function startCloudSession() {
   const boot = el('bootOverlay');
@@ -4723,6 +4772,7 @@ async function startCloudSession() {
     const cloudHasData = !!(row && row.data && typeof row.data === 'object' && !Array.isArray(row.data) && (Array.isArray(row.data.holdings) || Array.isArray(row.data.transactions) || row.data.settings));
     syncQuoteSel();
     if (!cloudHasData) {
+      cloudDiag = { ok: true, revision: row ? (Number(row.revision) || 0) : 0, holdings: 0, transactions: 0, error: null, at: new Date().toISOString() };
       state = loadState();
       syncMeta.baseRevision = row ? (Number(row.revision) || 0) : 0;
       if (!row) {
@@ -4736,25 +4786,33 @@ async function startCloudSession() {
       renderAll();
       await forcePush();
     } else {
-      // 以云端为准：云端有数据则覆盖本地（包括 localStorage/缓存）
-      if (!adoptRemote({ revision: Number(row.revision) || 0, data: row.data })) {
-        toast('云端数据异常，已使用本地缓存');
+      // 以云端为准：云端有数据则覆盖本地（覆盖前自动快照到 PRE_ADOPT_KEY）
+      const res = adoptRemote({ revision: Number(row.revision) || 0, data: row.data });
+      if (!res.ok) {
+        const why = res.error && res.error.message ? res.error.message : '未知解析错误';
+        toast('云端数据解析失败：' + why + '（已保留本地缓存）');
         state = loadState();
         renderAll();
       }
     }
     bootRefresh();
     showCorruptDialogIfAny();
+    console.log('[boot] cloud', diagInfo());
   } catch (e) {
+    lastCloudError = (e && (e.message || e.error_description || e.hint)) ? (e.message || e.error_description || e.hint) : String(e || '未知错误');
+    cloudDiag = { ok: false, revision: null, holdings: null, transactions: null, error: lastCloudError, at: new Date().toISOString() };
+    console.error('[boot] cloud failed', e);
     sessionReady = true;
     el('btnLogout').style.display = '';
+    const hasLocal = !!localStorage.getItem(STORE_KEY);
     state = loadState();
     syncQuoteSel();
     renderAll();
     bootRefresh();
-    setSyncDot('err', '云端暂不可达，当前使用本地缓存');
-    toast('云端暂不可达，当前使用本地缓存');
+    setSyncDot('err', '云端不可达：' + lastCloudError);
+    toast(hasLocal ? ('云端不可达：' + lastCloudError + '；当前使用本地缓存') : ('云端不可达：' + lastCloudError + '；本地无缓存，请重新登录或导入恢复'));
     showCorruptDialogIfAny();
+    console.log('[boot] cloud-fail', diagInfo());
   } finally {
     if (boot) boot.style.display = 'none';
   }
@@ -4775,12 +4833,27 @@ async function doLogin() {
   } finally {
     el('btnLogin').disabled = false;
   }
-  st.hideT = !!st.hideT;
-  st.hideTKline = st.hideTKline !== false;
 
 }
 
 initMkBubbleDelegation();
+
+(function initBuildTag() {
+  const tag = el('buildTag');
+  window.__diag = diagInfo;
+  if (!tag) return;
+  tag.textContent = BUILD;
+  tag.title = '当前页面构建 ' + BUILD + '（点击复制诊断信息）';
+  tag.onclick = () => {
+    const txt = JSON.stringify(diagInfo(), null, 2);
+    console.log('[diag]', txt);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(() => toast('诊断信息已复制')).catch(() => toast('诊断信息已输出到控制台'));
+    } else {
+      toast('诊断信息已输出到控制台');
+    }
+  };
+})();
 
 (async function boot() {
   if (!sb) {
