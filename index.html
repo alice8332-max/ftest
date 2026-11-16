@@ -91,6 +91,8 @@ body{
 .view.active{display:block}
 .section-head,.toolbar{display:flex;align-items:center;gap:12px;margin-bottom:14px}
 .section-head h2{font-size:16px;font-weight:600}
+#btnShowCleared[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:rgba(37,99,235,.08)}
+#btnShowCleared[hidden]{display:none}
 .grow{flex:1}
 .switch{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;cursor:pointer;user-select:none}
 .tool-label{color:var(--muted);font-size:13px}
@@ -165,6 +167,9 @@ body{
 .tx-table tbody tr{user-select:none}
 .tx-table tbody tr.tx-flag td{background:rgba(37,99,235,.10)}
 .tx-table tbody tr.tx-flag:hover td{background:rgba(37,99,235,.16)}
+/* v0.28.2：短线行浅黄底（与「短」按钮 #f59e0b 同色系） */
+.tx-table tbody tr.tx-flag-s td{background:rgba(245,158,11,.14)}
+.tx-table tbody tr.tx-flag-s:hover td{background:rgba(245,158,11,.22)}
 .empty-row td{text-align:center;color:var(--muted);padding:40px 0}
 .note-cell{max-width:280px;overflow:hidden;text-overflow:ellipsis}
 .row-actions{display:flex;gap:10px}
@@ -179,7 +184,6 @@ body{
 .tx-stats{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-left:4px}
 .tx-stats .warn{color:var(--warn);font-weight:700;cursor:help}
 .tx-hide{display:flex;align-items:center;gap:4px;font-size:13px;color:var(--muted);cursor:pointer;user-select:none;white-space:nowrap}
-.kline-tools{display:flex;align-items:center;gap:10px;margin:4px 0 8px;flex-wrap:wrap}
 .overlay{
   position:fixed;inset:0;background:rgba(15,23,42,.45);
   display:flex;align-items:center;justify-content:center;z-index:100;
@@ -357,10 +361,13 @@ body{
   display:flex;flex-direction:column;
 }
 .kli-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-.kli-title{font-size:15px;font-weight:600}
+.kli-title{font-size:15px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .kli-title .muted{font-weight:400;font-size:12px;margin-left:6px;color:var(--muted)}
-.kli-cfg{margin-left:auto;font-size:11px;color:var(--muted);cursor:pointer;padding:2px 6px;border-radius:5px;border:1px solid var(--line);background:var(--card);flex:none}
+.kli-actions{margin-left:auto;display:flex;align-items:center;gap:6px;flex:none}
+.kli-cfg{font-size:11px;color:var(--muted);cursor:pointer;padding:2px 6px;border-radius:5px;border:1px solid var(--line);background:var(--card);flex:none}
 .kli-cfg:hover{color:var(--accent);border-color:var(--accent)}
+.kli-cfg.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.kli-cfg.on:hover{color:#fff}
 .kli-quote{display:flex;align-items:baseline;gap:14px;margin-bottom:8px;white-space:nowrap}
 .kli-price{font-size:22px;font-weight:700}
 .kli-pct{font-size:14px;font-weight:600}
@@ -486,6 +493,8 @@ body{
   #btnExportJson,#btnImportJson{display:inline-flex}
   .btn{padding:9px 14px;font-size:14px}
   .btn.chip{padding:7px 12px;font-size:13px}
+  .build-tag{display:none}
+  #btnShowCleared{display:none}
   .summary{grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 12px}
   .sum-card:first-child{display:none}
   .sum-card{padding:8px 10px}
@@ -600,6 +609,7 @@ body{
   <main id="view-holdings" class="view" data-view="holdings">
     <div class="section-head">
       <h2 id="holdingsTitle">当前持仓（0只）</h2>
+      <button id="btnShowCleared" class="btn chip" aria-pressed="false" hidden title="显示/隐藏已清仓标的">显示已清仓（0）</button>
       <div class="grow"></div>
       <button id="btnNewHolding" class="btn primary">+新增持仓</button>
     </div>
@@ -610,7 +620,6 @@ body{
     <div class="section-head">
       <h2>行情K线</h2>
     </div>
-    <div class="kline-tools"><label class="tx-hide"><input type="checkbox" id="hideTKline">隐藏T交易</label></div>
     <div id="klineNav" class="kline-nav"></div>
     <div id="klineList" class="kline-stage"></div>
     <p class="src-note" id="klineSrcNote"></p>
@@ -703,7 +712,7 @@ const SUPABASE_TABLE = 'investment_data';
 const SUPABASE_URL = 'https://gqjbtbxtkiptjeryqawd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_xAbx5HkUJCMssWBtPWzgCw_9UDQNrc2';
 const MONITOR_SECRET = 'mon_19850915!888888'; // 定投参考：与 Supabase Edge Function 的 MONITOR_SECRET 一致（防滥用共享串，非保密）
-const BUILD = 'v0.28.1-20261116'; // 页面构建标识：部署后看页脚/右上角即可确认浏览器跑的是哪一版
+const BUILD = 'v0.28.2-20261116'; // 页面构建标识：部署后看页脚/右上角即可确认浏览器跑的是哪一版
 const PRE_ADOPT_KEY = 'invPlatformData_v1_pre_adopt'; // 云端覆盖本地前的自动快照，可手动找回
 const FEE_RATE_ETF = 0.0001;
 const FEE_RATE_STOCK = 0.00013;
@@ -836,7 +845,7 @@ function defaultState() {
     plans: [],
     activePlanId: null,
     monitoring: {},
-    settings: { quoteAutoSec: 0, gridDefs: {}, klineFrom: {}, hideT: false, hideTKline: true }
+    settings: { quoteAutoSec: 0, gridDefs: {}, klineFrom: {}, hideT: false, hideTKline: true, showCleared: false }
   };
 }
 function migrateFund(data) {
@@ -1022,7 +1031,7 @@ function diagInfo() {
       holdings: state ? state.holdings.length : 0,
       transactions: state ? state.transactions.length : 0
     },
-    settings: { hideT: !!s.hideT, hideTKline: s.hideTKline !== false }
+    settings: { hideT: !!s.hideT, hideTKline: s.hideTKline !== false, showCleared: !!s.showCleared }
   };
 }
 async function handlePushConflict() {
@@ -1137,7 +1146,7 @@ function initDragSort() {
   let dragId = null;
   list.addEventListener('dragstart', e => {
     const card = e.target.closest('.hold-row, .hold-table tr[data-id]');
-    if (!card) return;
+    if (!card || card.classList.contains('cleared-row')) return;
     dragId = card.dataset.id;
     card.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
@@ -1153,12 +1162,13 @@ function initDragSort() {
     e.dataTransfer.dropEffect = 'move';
     const card = e.target.closest('.hold-row, .hold-table tr[data-id]');
     list.querySelectorAll('.drop-hint').forEach(x => x.classList.remove('drop-hint'));
-    if (card && card.dataset.id !== dragId) card.classList.add('drop-hint');
+    if (card && !card.classList.contains('cleared-row') && card.dataset.id !== dragId) card.classList.add('drop-hint');
   });
   list.addEventListener('drop', e => {
     if (!dragId) return;
     e.preventDefault();
     const card = e.target.closest('.hold-row, .hold-table tr[data-id]');
+    if (card && card.classList.contains('cleared-row')) { dragId = null; return; }
     const targetId = card && card.dataset.id !== dragId ? card.dataset.id : null;
     const id = dragId;
     dragId = null;
@@ -1296,13 +1306,11 @@ function renderSummary() {
 }
 
 function renderHoldings() {
-  let list = sortedHoldings().filter(h => !h.cleared);
-  el('holdingsTitle').textContent = '当前持仓（' + list.length + '只）';
-  if (!list.length) { el('holdingList').innerHTML = '<div class="empty">暂无持仓，点击「+新增持仓」开始记录</div>'; return; }
   const isM = mqMobile.matches;
+  let all = sortedHoldings();
   if (holdSort.key) {
     const dir = holdSort.dir;
-    list = [...list].sort((a, b) => {
+    all = [...all].sort((a, b) => {
       let av, bv;
       if (holdSort.key === 'posPL') {
         const ap = posPL(a), bp = posPL(b);
@@ -1319,6 +1327,18 @@ function renderHoldings() {
       return (av - bv) * dir;
     });
   }
+  const active = all.filter(h => !h.cleared);
+  const cleared = all.filter(h => h.cleared);
+  const showCleared = !isM && !!(state.settings && state.settings.showCleared);
+  const list = showCleared ? active.concat(cleared) : active;
+  el('holdingsTitle').textContent = '当前持仓（' + active.length + '只）';
+  const scBtn = el('btnShowCleared');
+  if (scBtn) {
+    scBtn.hidden = !cleared.length;
+    scBtn.textContent = (showCleared ? '隐藏已清仓（' : '显示已清仓（') + cleared.length + '）';
+    scBtn.setAttribute('aria-pressed', showCleared ? 'true' : 'false');
+  }
+  if (!list.length) { el('holdingList').innerHTML = '<div class="empty">暂无持仓，点击「+新增持仓」开始记录</div>'; return; }
   const etfs = list.filter(h => h.type !== 'fund');
   const funds = list.filter(h => h.type === 'fund');
   let html = '';
@@ -1352,7 +1372,11 @@ function renderHoldings() {
       '<th class="n">上次买价</th><th class="n">持股数</th><th>操作</th></tr></thead><tbody>';
     for (const h of etfs) {
       const r = posPL(h), day = dayPLOf(h), cost = (h.shares || 0) * (h.avgCost || 0), lbp = lastBuyPriceOf(h);
-      html += '<tr data-id="' + h.id + '" draggable="' + (holdSort.key ? 'false' : 'true') + '">' +
+      const rowCls = h.cleared ? ' class="cleared-row"' : '';
+      const acts = h.cleared
+        ? '<span class="link-edit" data-act="edit">编辑</span>'
+        : '<span class="link-edit" data-act="edit">编辑</span> <span class="link-edit" style="color:var(--up);cursor:pointer" data-act="buy">买入</span> <span class="link-edit" style="color:var(--down);cursor:pointer" data-act="sell">卖出</span>';
+      html += '<tr data-id="' + h.id + '"' + rowCls + ' draggable="' + (h.cleared || holdSort.key ? 'false' : 'true') + '">' +
         '<td><span class="idx num">' + h.order + '</span> <span class="code num">' + esc(h.code) + '</span> ' + esc(h.name) + (h.cleared ? ' <span class="badge-cleared">已清仓</span>' : '') + '</td>' +
         '<td class="n">' + fmtMoney(cost) + '</td>' +
         '<td class="n">' + (r ? '<span class="' + cls(r.pl) + '">' + fmtSigned(r.pl) + '</span>' : '--') + '</td>' +
@@ -1363,19 +1387,22 @@ function renderHoldings() {
         '<td class="n">' + (day ? '<span class="' + cls(day.pl) + '">' + fmtPct(day.pct) + '</span>' : '--') + '</td>' +
         '<td class="n">' + (lbp !== null ? fmtPrice(lbp, h.type) : '--') + '</td>' +
         '<td class="n">' + fmtShares(h.shares, h.type) + '</td>' +
-        '<td class="row-actions"><span class="link-edit" data-act="edit">编辑</span> <span class="link-edit" style="color:var(--up);cursor:pointer" data-act="buy">买入</span> <span class="link-edit" style="color:var(--down);cursor:pointer" data-act="sell">卖出</span></td>' +
+        '<td class="row-actions">' + acts + '</td>' +
       '</tr>';
     }
     html += '</tbody></table></div>';
     for (const h of funds) {
       const r = posPL(h);
-      html += '<div class="hold-fund-row" data-id="' + h.id + '">' +
-        '<span class="code num">' + esc(h.code) + '</span> <span>' + esc(h.name) + ' <span class="tag-fund">场外</span></span>' +
+      const fundActs = h.cleared
+        ? '<span class="link-edit" data-act="edit">编辑</span>'
+        : '<span class="link-edit" data-act="update">更新</span> <span class="link-edit" data-act="edit">编辑</span>';
+      html += '<div class="hold-fund-row' + (h.cleared ? ' cleared-row' : '') + '" data-id="' + h.id + '">' +
+        '<span class="code num">' + esc(h.code) + '</span> <span>' + esc(h.name) + ' <span class="tag-fund">场外</span>' + (h.cleared ? ' <span class="badge-cleared">已清仓</span>' : '') + '</span>' +
         '<span class="num" style="font-size:12px;color:var(--muted)">投入' + (h.avgCost > 0 ? fmtMoney(h.avgCost) : '--') + '</span>' +
         '<span class="num" style="font-size:13px">市值' + (h.currentPrice > 0 ? fmtMoney(h.currentPrice) : '--') + '</span>' +
         (r ? '<span class="num ' + cls(r.pl) + '" style="font-size:13px">' + fmtSigned(r.pl) + ' ' + fmtPct(r.pct) + '</span>' : '') +
         '<span class="grow"></span>' +
-        '<span class="row-actions"><span class="link-edit" data-act="update">更新</span> <span class="link-edit" data-act="edit">编辑</span></span></div>';
+        '<span class="row-actions">' + fundActs + '</span></div>';
     }
   }
   el('holdingList').innerHTML = html;
@@ -1899,6 +1926,7 @@ function normalizeSettings(data) {
   const s = data.settings && typeof data.settings === 'object' ? data.settings : {};
   s.hideT = !!s.hideT;
   s.hideTKline = s.hideTKline !== false;
+  s.showCleared = !!s.showCleared;
   const sec = Number(s.quoteAutoSec);
   if (QUOTE_INTERVALS.indexOf(sec) !== -1) {
     s.quoteAutoSec = sec;
@@ -2600,7 +2628,6 @@ function renderKlines() {
   const srcs = Array.from(new Set(hs.map(h => (klineStore()[h.code] || {}).src).filter(Boolean)));
   const srcTxt = srcs.length ? '（当前：' + srcs.join('/') + '）' : '';
   el('klineSrcNote').textContent = 'K线来源：东方财富公开历史行情，东财不可用时自动切换腾讯' + srcTxt + '（近一个月日K）；B/S 标记为你录入的交易流水，网格线 = 最近一次买入价 × (1±配置%)；时间窗口：拖动可视化下方时间条左端压缩、拖动图表平移，双击时间条恢复全月，窗口跟随云端同步。';
-  if (el('hideTKline')) el('hideTKline').checked = !!(state.settings && state.settings.hideTKline);
 }
 function initKlineSwipe(card, hs, sel) {
   let sx = null, sy = null, pid = null;
@@ -2625,7 +2652,11 @@ function klineCardHTML(h) {
   const lastBuy = lastBuyPriceOf(h);
   const cp = h.currentPrice > 0 ? h.currentPrice : null;
   const pct = (cp != null && lastBuy != null) ? cp / lastBuy - 1 : null;
-  const cfgBtn = '<button class="kli-cfg" data-act="grid" data-id="' + h.id + '" title="配置 4 根网格线的百分比">⚙ 网格</button>';
+  const hideTOn = !(state.settings && state.settings.hideTKline === false);
+  const actBtns = '<span class="kli-actions">' +
+    '<button type="button" class="kli-cfg' + (hideTOn ? ' on' : '') + '" data-act="hidett" aria-pressed="' + (hideTOn ? 'true' : 'false') + '" title="' + (hideTOn ? '已隐藏K线上的T交易（点击显示）' : '正在显示K线上的T交易（点击隐藏）') + '">隐藏T</button>' +
+    '<button type="button" class="kli-cfg" data-act="grid" data-id="' + h.id + '" title="配置 4 根网格线的百分比">⚙ 网格</button>' +
+    '</span>';
   let svgBlock = '<div class="kli-empty">加载中…</div>';
   let tlBlock = '';
   const c = klineStore()[h.code];
@@ -2652,7 +2683,7 @@ function klineCardHTML(h) {
   const staleNote = (view && klineStore()[h.code] && klineStore()[h.code].day !== today())
     ? '<div class="kli-note">K线截至 ' + esc(shortDate(klineStore()[h.code].day)) + '，可点顶栏「⟳ 行情」刷新</div>' : '';
   return '<div class="kline-card" data-id="' + h.id + '">' +
-    '<div class="kli-head"><span class="kli-title">' + esc(h.code) + ' <span class="muted">' + esc(h.name) + '</span></span>' + cfgBtn + '</div>' +
+    '<div class="kli-head"><span class="kli-title">' + esc(h.code) + ' <span class="muted">' + esc(h.name) + '</span></span>' + actBtns + '</div>' +
     '<div class="kli-quote">' +
       '<span class="kli-price num">' + (cp != null ? fmtPrice(cp, h.type) : '--') + '</span>' +
       (pct != null ? '<span class="kli-pct num ' + cls(pct) + '">' + fmtPct(pct) + '</span>' : '') +
@@ -4579,6 +4610,8 @@ function bindEvents() {
     }
     const cfg = e.target.closest('[data-act="grid"]');
     if (cfg) openGridModal(cfg.dataset.id);
+    const ht = e.target.closest('[data-act="hidett"]');
+    if (ht) { state.settings.hideTKline = !state.settings.hideTKline; save(); renderKlines(); }
   });
   bindKlineKeys();
   bindMonitorActions();
@@ -4599,6 +4632,11 @@ function bindEvents() {
   });
 
   el('btnNewHolding').onclick = openNewHoldingModal;
+  el('btnShowCleared').onclick = () => {
+    state.settings.showCleared = !state.settings.showCleared;
+    save();
+    renderHoldings();
+  };
   el('btnQuote').onclick = () => { fetchQuotes(false); fetchMacro(false); lazyLoadKlines(true); };
   const qSel = el('quoteAuto');
   syncQuoteSel();
@@ -4640,7 +4678,6 @@ function bindEvents() {
   };
   el('txFilter').onchange = e => { txFilterCode = e.target.value; renderTransactions(); };
   if (el('hideTTx')) el('hideTTx').onchange = e => { state.settings.hideT = !!e.target.checked; save(); renderTransactions(); };
-  if (el('hideTKline')) { el('hideTKline').checked = !!(state && state.settings && state.settings.hideTKline); el('hideTKline').onchange = e => { state.settings.hideTKline = !!e.target.checked; save(); renderKlines(); }; }
 }
 function bindKlineKeys() {
   document.addEventListener('keydown', e => {
