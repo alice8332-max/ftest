@@ -175,6 +175,11 @@ body{
 .link-flag{color:var(--muted);cursor:pointer;font-size:12px;font-weight:700;user-select:none;min-width:16px;text-align:center;border-radius:4px;padding:0 4px}
 .link-flag:hover{color:var(--accent)}
 .link-flag.on{background:var(--accent);color:#fff}
+.link-flag.short.on{background:#f59e0b;color:#fff}
+.tx-stats{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-left:4px}
+.tx-stats .warn{color:var(--warn);font-weight:700;cursor:help}
+.tx-hide{display:flex;align-items:center;gap:4px;font-size:13px;color:var(--muted);cursor:pointer;user-select:none;white-space:nowrap}
+.kline-tools{display:flex;align-items:center;gap:10px;margin:4px 0 8px;flex-wrap:wrap}
 .overlay{
   position:fixed;inset:0;background:rgba(15,23,42,.45);
   display:flex;align-items:center;justify-content:center;z-index:100;
@@ -505,9 +510,12 @@ body{
   .tx-table{min-width:0}
   .tx-table th:nth-child(3),.tx-table td:nth-child(3),
   .tx-table th:nth-child(4),.tx-table td:nth-child(4),
-  .tx-table th:nth-child(8),.tx-table td:nth-child(8),
-  .tx-table th:nth-child(9),.tx-table td:nth-child(9){display:none}
+  .tx-table th:nth-child(5),.tx-table td:nth-child(5),
+  .tx-table th:nth-child(9),.tx-table td:nth-child(9),
+  .tx-table th:nth-child(10),.tx-table td:nth-child(10){display:none}
   .tx-table th,.tx-table td{padding:8px 4px}
+  .tx-table .link-edit{display:none}
+  .tx-stats{width:100%;margin-left:0;order:5}
   /* v0.25.0：手机端资产配置改为「顶部导航 + 环 + 右侧竖排信息」，明细表不显示 */
   .alloc-main .alloc-scroll{display:none}
   .alloc-mob{display:block}
@@ -598,6 +606,7 @@ body{
     <div class="section-head">
       <h2>行情K线</h2>
     </div>
+    <div class="kline-tools"><label class="tx-hide"><input type="checkbox" id="hideTKline">隐藏T交易</label></div>
     <div id="klineNav" class="kline-nav"></div>
     <div id="klineList" class="kline-stage"></div>
     <p class="src-note" id="klineSrcNote"></p>
@@ -610,6 +619,8 @@ body{
       <button id="sortCode" class="btn chip">按代码</button>
       <span class="tool-label" style="margin-left:10px">筛选</span>
       <select id="txFilter"></select>
+      <label class="tx-hide" style="margin-left:6px"><input type="checkbox" id="hideTTx">隐藏T</label>
+      <div class="tx-stats" id="txStats"></div>
       <div class="grow"></div>
       <button id="btnExportCsv" class="btn primary">导出CSV</button>
     </div>
@@ -617,7 +628,7 @@ body{
       <table class="tx-table">
         <thead>
           <tr>
-            <th>日期</th><th>操作</th><th>代码</th><th>名称</th>
+            <th>日期</th><th>缩写</th><th>操作</th><th>代码</th><th>名称</th>
             <th>单价</th><th>数量(股)</th><th>金额</th><th>手续费</th><th>备注</th><th></th>
           </tr>
         </thead>
@@ -799,13 +810,13 @@ function defaultState() {
       id: uid(), code: s.code, name: s.name, type: s.type,
       shares: s.type === 'fund' ? 1 : 0, avgCost: 0, currentPrice: 0,
       prevClose: 0, todayOpen: 0,
-      lastUpdate: '', cleared: false, order: i + 1
+      lastUpdate: '', cleared: false, abbr: '', order: i + 1
     })),
     transactions: [],
     plans: [],
     activePlanId: null,
     monitoring: {},
-    settings: { quoteAutoSec: 0, gridDefs: {}, klineFrom: {} }
+    settings: { quoteAutoSec: 0, gridDefs: {}, klineFrom: {}, hideT: false, hideTKline: true }
   };
 }
 function migrateFund(data) {
@@ -846,6 +857,9 @@ function loadState() {
     normalizeSettings(data);
     reorderLegacySeed(data);
     migrateFund(data);
+    (data.holdings||[]).forEach(h=>{ h.abbr = normalizeAbbr(h.abbr); });
+    (data.transactions||[]).forEach(t=>{ const m=(t.mark==='S')?'S':(t.flag||t.mark==='T')?'T':''; t.mark=m; t.flag=(m==='T'); });
+    normalizeSettings(data);
     return data;
   } catch (e) {
     try { localStorage.setItem(STORE_KEY + '_corrupted_backup', raw); } catch (e2) {}
@@ -1318,6 +1332,7 @@ function holdRowHTML(h, r, day) {
 function txRows() {
   let rows = state.transactions.map((t, i) => ({ t, i }));
   if (txFilterCode) rows = rows.filter(r => codeOf(r.t) === txFilterCode);
+  if (state.settings && state.settings.hideT) rows = rows.filter(r => txMarkOf(r.t) !== 'T');
   rows.sort((a, b) => {
     let r = 0;
     if (txSort.key === 'date') {
@@ -1334,34 +1349,65 @@ function txRows() {
   return rows.map(r => r.t);
 }
 
+function txStatsHTML() {
+  let tSum = 0;
+  const tByH = {};
+  state.transactions.forEach(t => {
+    if (txMarkOf(t) === 'T') {
+      tSum += (t.type === 'buy' ? 1 : -1) * (Number(t.amount) || 0);
+      tByH[t.holdingId] = (tByH[t.holdingId] || 0) + (t.type === 'buy' ? 1 : -1) * (Number(t.shares) || 0);
+    }
+  });
+  let tPairBad = false;
+  Object.keys(tByH).forEach(k => { if (Math.abs(tByH[k]) > 1e-6) tPairBad = true; });
+  let tText = 'T仓盈亏 ' + (tSum < 0 ? '盈利 ' : tSum > 0 ? '亏损 ' : '') + '¥' + fmtMoney(Math.abs(tSum));
+  if (tPairBad) tText += ' <span class="warn" title="配对问题：存在T标记股数未对平">!</span>';
+  let shortShares = 0, holdShares = 0;
+  state.holdings.forEach(h => { if (h.type === 'fund' || h.cleared) return; holdShares += Number(h.shares) || 0; });
+  state.transactions.forEach(t => {
+    const h = getHolding(t.holdingId);
+    if (!h || h.type === 'fund' || h.cleared) return;
+    if (txMarkOf(t) === 'S') shortShares += (t.type === 'buy' ? 1 : -1) * (Number(t.shares) || 0);
+  });
+  const denom = holdShares - shortShares;
+  let sp = '--';
+  if (Math.abs(denom) > 1e-9) { const pct = shortShares / denom * 100; sp = (pct > 0 ? '+' : '') + pct.toFixed(1) + '%'; }
+  return '<span>' + tText + '</span><span>短线占比 ' + sp + '</span>';
+}
 function renderTransactions() {
   el('sortDate').textContent = '按日期' + (txSort.key === 'date' ? (txSort.dir === 1 ? ' ↑' : ' ↓') : '');
   el('sortCode').textContent = '按代码' + (txSort.key === 'code' ? (txSort.dir === 1 ? ' ↑' : ' ↓') : '');
+  const statsEl = el('txStats'); if (statsEl) statsEl.innerHTML = txStatsHTML();
+  const hideT = el('hideTTx'); if (hideT) hideT.checked = !!(state.settings && state.settings.hideT);
   const rows = txRows();
   const tbody = el('txBody');
   if (!rows.length) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="10">暂无交易记录</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="11">暂无交易记录</td></tr>';
     return;
   }
   tbody.innerHTML = rows.map(t => {
     const h = getHolding(t.holdingId) || {};
     const type = h.type || 'etf';
     const op = opInfo(t);
-    return '<tr data-id="' + t.id + '"' + (t.flag ? ' class="tx-flag"' : '') + '>' +
+    const mark = txMarkOf(t);
+    const trCls = mark === 'T' ? ' class="tx-flag"' : mark === 'S' ? ' class="tx-flag-s"' : '';
+    const abbr = h.abbr ? esc(h.abbr) : '';
+    const shSigned = t.type === 'buy' ? t.shares : -t.shares;
+    return '<tr data-id="' + t.id + '"' + trCls + '>' +
       '<td class="num">' + (mqMobile.matches ? esc(shortDate(t.date)) : esc(t.date)) + '</td>' +
+      '<td>' + abbr + '</td>' +
       '<td class="' + op.c + '">' + op.txt + '</td>' +
       '<td class="num">' + esc(h.code || '') + '</td>' +
       '<td>' + esc(h.name || '') + '</td>' +
       '<td class="num">' + fmtPrice(t.price, type) + '</td>' +
-      '<td class="num">' + fmtSignedShares(t.type === 'buy' ? t.shares : -t.shares, type) + '</td>' +
+      '<td class="num ' + cls(shSigned) + '">' + fmtSignedShares(shSigned, type) + '</td>' +
       '<td class="num ' + (t.type === 'buy' ? 'up' : 'down') + '">' + fmtSigned(t.type === 'buy' ? t.amount : -t.amount) + '</td>' +
       '<td class="num">' + fmtMoney(t.fee) + '</td>' +
       '<td class="note-cell" title="' + esc(t.note || '') + '">' + esc(t.note || '') + '</td>' +
-      '<td><div class="row-actions"><span class="link-edit" data-edit="' + t.id + '">编辑</span><span class="link-flag' + (t.flag ? ' on' : '') + '" data-t="' + t.id + '" role="button" aria-pressed="' + (t.flag ? 'true' : 'false') + '">T</span></div></td>' +
+      '<td><div class="row-actions"><span class="link-edit" data-edit="' + t.id + '">编辑</span><span class="link-flag' + (mark==='T'?' on':'') + '" data-t="' + t.id + '" role="button" aria-pressed="' + (mark==='T') + '">T</span><span class="link-flag short' + (mark==='S'?' on':'') + '" data-s="' + t.id + '" role="button" aria-pressed="' + (mark==='S') + '">短</span></div></td>' +
     '</tr>';
   }).join('');
 }
-
 function renderFilterOptions() {
   const sel = el('txFilter');
   sel.innerHTML = '<option value="">全部标的</option>' + sortedHoldings().map(h =>
@@ -1601,6 +1647,7 @@ function openEditModal(id) {
     '<div class="form-grid">' +
       fieldHTML({ label: '代码', id: 'eCode', value: h.code }) +
       fieldHTML({ label: '名称', id: 'eName', value: h.name }) +
+      fieldHTML({ label: '缩写(选填,≤2字)', id: 'eAbbr', value: h.abbr || '', maxlen: 2 }) +
       fieldHTML({ label: '持股数', id: 'eShares', type: 'number', value: h.shares, step: '1', min: 0 }) +
       fieldHTML({ label: '均价', id: 'eAvg', type: 'number', value: h.avgCost || '', step: '0.0001', min: 0 }) +
       fieldHTML({ label: '现价', id: 'eCur', type: 'number', value: h.currentPrice || '', step: '0.001', min: 0 }) +
@@ -1621,16 +1668,20 @@ function openEditModal(id) {
     const code = ov.querySelector('#eCode').value.trim();
     const name = ov.querySelector('#eName').value.trim();
     const s = parseFloat(ov.querySelector('#eShares').value) || 0;
+    const abbr = normalizeAbbr(ov.querySelector('#eAbbr').value);
+    const abbrRaw = String(ov.querySelector('#eAbbr').value || '').replace(/\s+/g,'').trim();
     let msg = '';
     if (!code) msg = '请输入代码';
     else if (codeExists(code, h.id)) msg = '该代码已存在';
     else if (!name) msg = '请输入名称';
+    else if (abbrRaw && Array.from(abbrRaw).length > 2) msg = '缩写最多2个字符';
     else if (s < 0) msg = '数量不能为负';
     else if (!Number.isInteger(s)) msg = '场内ETF数量须为整数';
     if (msg) { errEl.textContent = msg; return; }
     const num = (sid) => { const v = parseFloat(ov.querySelector(sid).value); return v > 0 ? v : 0; };
     h.code = code;
     h.name = name;
+    h.abbr = abbr;
     h.shares = s;
     h.avgCost = num('#eAvg');
     h.currentPrice = num('#eCur');
@@ -2453,6 +2504,7 @@ function renderKlines() {
   const srcs = Array.from(new Set(hs.map(h => (klineStore()[h.code] || {}).src).filter(Boolean)));
   const srcTxt = srcs.length ? '（当前：' + srcs.join('/') + '）' : '';
   el('klineSrcNote').textContent = 'K线来源：东方财富公开历史行情，东财不可用时自动切换腾讯' + srcTxt + '（近一个月日K）；B/S 标记为你录入的交易流水，网格线 = 最近一次买入价 × (1±配置%)；时间窗口：拖动可视化下方时间条左端压缩、拖动图表平移，双击时间条恢复全月，窗口跟随云端同步。';
+  if (el('hideTKline')) el('hideTKline').checked = !!(state.settings && state.settings.hideTKline);
 }
 function initKlineSwipe(card, hs, sel) {
   let sx = null, sy = null, pid = null;
@@ -2489,6 +2541,7 @@ function klineCardHTML(h) {
       const sub = view.slice(klineI0Of(h, view));
       const txs = state.transactions
         .filter(t => t.holdingId === h.id && (t.type === 'buy' || t.type === 'sell'))
+        .filter(t => !(state.settings && state.settings.hideTKline && txMarkOf(t) === 'T'))
         .filter(t => t.date >= sub[0].date && t.date <= sub[sub.length - 1].date)
         .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
       svgBlock = '<svg class="kli-svg" viewBox="0 0 520 330" xmlns="http://www.w3.org/2000/svg"><title>左右拖动平移时间窗口</title>' +
@@ -2563,11 +2616,13 @@ function klineSVG(h, view, txs, lastBuy, cp) {
   const drawMark = (t, x) => {
     const cy = Y(t.price);
     const isBuy = t.type === 'buy';
+    const isShort = txMarkOf(t) === 'S';
     const col = isBuy ? K_BLUE : K_YELLOW;
+    const txtCol = isShort ? '#f59e0b' : '#6b7280';
     svg += '<circle cx="' + x.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + PU(2.3) + '" fill="#fff" stroke="' + col + '" stroke-width="' + PU(1) + '"/>';
-    svg += '<text x="' + x.toFixed(1) + '" y="' + (cy - PU(5)).toFixed(1) + '" text-anchor="middle" font-size="' + PU(9) + '" font-weight="700" fill="' + col + '">' + (isBuy ? 'B' : 'S') + '</text>';
-    svg += '<text x="' + x.toFixed(1) + '" y="' + (cy + PU(9)).toFixed(1) + '" text-anchor="middle" font-size="' + PU(7.5) + '" fill="#6b7280">' + esc(fmtPrice(t.price, h.type)) + '</text>';
-    svg += '<text x="' + x.toFixed(1) + '" y="' + (cy + PU(13.5)).toFixed(1) + '" text-anchor="middle" font-size="' + PU(7.5) + '" fill="#6b7280">' + (isBuy ? '+' : '-') + esc(fmtShares(t.shares, h.type)) + '股</text>';
+    svg += '<text x="' + x.toFixed(1) + '" y="' + (cy - PU(5)).toFixed(1) + '" text-anchor="middle" font-size="' + PU(9) + '" font-weight="700" fill="' + (isShort ? '#f59e0b' : col) + '">' + (isBuy ? 'B' : 'S') + '</text>';
+    svg += '<text x="' + x.toFixed(1) + '" y="' + (cy + PU(9)).toFixed(1) + '" text-anchor="middle" font-size="' + PU(7.5) + '" fill="' + txtCol + '">' + esc(fmtPrice(t.price, h.type)) + '</text>';
+    svg += '<text x="' + x.toFixed(1) + '" y="' + (cy + PU(13.5)).toFixed(1) + '" text-anchor="middle" font-size="' + PU(7.5) + '" fill="' + txtCol + '">' + (isBuy ? '+' : '-') + esc(fmtShares(t.shares, h.type)) + '股</text>';
   };
   if (txs.length) {
     const byBar = {};
@@ -2793,7 +2848,7 @@ function exportCsv() {
     lines.push([
       t.date, opInfo(t).txt, h.code || '', h.name || '',
       t.price, sign * t.shares, (sign * t.amount).toFixed(2), t.fee.toFixed(2), t.note || '',
-      t.flag ? '是' : ''
+      txMarkOf(t) === 'T' ? 'T' : txMarkOf(t) === 'S' ? '短' : ''
     ]);
   });
   const csv = '\uFEFF' + lines.map(r => r.map(csvCell).join(',')).join('\r\n');
@@ -2823,22 +2878,27 @@ function normalizeImport(data) {
       todayOpen: Number(h.todayOpen) || 0,
       lastUpdate: String(h.lastUpdate || ''),
       cleared: !!h.cleared,
+      abbr: normalizeAbbr(h.abbr),
       order: Number(h.order) || i + 1
     };
   });
-  const transactions = (data.transactions || []).map(t => ({
-    id: t.id || uid(),
-    holdingId: idMap[t.holdingId] || '',
-    type: t.type === 'sell' ? 'sell' : 'buy',
-    shares: Number(t.shares) || 0,
-    price: Number(t.price) || 0,
-    amount: Number(t.amount) || 0,
-    fee: Number(t.fee) || 0,
-    date: String(t.date || ''),
-    note: String(t.note || ''),
-    clearance: !!t.clearance,
-    flag: !!t.flag
-  }));
+  const transactions = (data.transactions || []).map(t => {
+    const _m = (t.mark === 'S') ? 'S' : (t.flag || t.mark === 'T') ? 'T' : '';
+    return {
+      id: t.id || uid(),
+      holdingId: idMap[t.holdingId] || '',
+      type: t.type === 'sell' ? 'sell' : 'buy',
+      shares: Number(t.shares) || 0,
+      price: Number(t.price) || 0,
+      amount: Number(t.amount) || 0,
+      fee: Number(t.fee) || 0,
+      date: String(t.date || ''),
+      note: String(t.note || ''),
+      clearance: !!t.clearance,
+      mark: _m,
+      flag: _m === 'T'
+    };
+  });
   const plans = (Array.isArray(data.plans) ? data.plans : []).map(pl => {
     const w = {};
     Object.keys(pl.weights || {}).forEach(k => { w[idMap[k] || k] = Number(pl.weights[k]) || 0; });
@@ -2859,27 +2919,6 @@ function normalizeImport(data) {
   migrateFund(norm);
   return norm;
 }
-
-async function importJson(file) {
-  if (!file) return;
-  try {
-    const data = JSON.parse(await file.text());
-    if (!data || !Array.isArray(data.holdings)) throw new Error('bad format');
-    const ok = await confirmDialog(
-      '导入将<b>全量覆盖</b>当前数据：<br>当前：' + state.holdings.length + '只持仓 / ' + state.transactions.length + '条流水<br>' +
-      '导入：' + data.holdings.length + '只持仓 / ' + (data.transactions || []).length + '条流水<br>确定继续？',
-      { title: '导入恢复', okText: '覆盖导入' }
-    );
-    if (!ok) return;
-    state = normalizeImport(data);
-    save();
-    renderAll();
-    toast('导入成功');
-  } catch (e) {
-    toast('导入失败：文件格式不正确');
-  }
-}
-
 function openUpdateFundModal(id) {
   const h = getHolding(id);
   if (!h) return;
@@ -2920,6 +2959,7 @@ function openEditFundModal(id) {
     '<div class="form-grid">' +
       fieldHTML({ label: '代码', id: 'eCode', value: h.code }) +
       fieldHTML({ label: '名称', id: 'eName', value: h.name }) +
+      fieldHTML({ label: '缩写(选填,≤2字)', id: 'eAbbr', value: h.abbr || '', maxlen: 2 }) +
       fieldHTML({ label: '最新市值', id: 'eMv', type: 'number', value: h.currentPrice || '', step: '0.01', min: 0 }) +
       fieldHTML({ label: '持仓盈亏（赚+ 亏-）', id: 'ePl', type: 'number', value: round2((h.currentPrice || 0) - (h.avgCost || 0)), step: '0.01' }) +
       fieldHTML({ label: '累计投入成本（自动计算）', id: 'eCostView', type: 'number', value: h.avgCost || '', step: '0.01', readonly: true, span: true }) +
@@ -2938,15 +2978,19 @@ function openEditFundModal(id) {
     const errEl = ov.querySelector('#eErr');
     const code = ov.querySelector('#eCode').value.trim();
     const name = ov.querySelector('#eName').value.trim();
+    const abbr = normalizeAbbr(ov.querySelector('#eAbbr').value);
+    const abbrRaw = String(ov.querySelector('#eAbbr').value || '').replace(/\s+/g,'').trim();
     const r = readMvPl(ov, '#eMv', '#ePl');
     let msg = '';
     if (!code) msg = '请输入代码';
     else if (codeExists(code, h.id)) msg = '该代码已存在';
     else if (!name) msg = '请输入名称';
+    else if (abbrRaw && Array.from(abbrRaw).length > 2) msg = '缩写最多2个字符';
     else if (r.err) msg = r.err;
     if (msg) { errEl.textContent = msg; return; }
     h.code = code;
     h.name = name;
+    h.abbr = abbr;
     h.avgCost = r.cost;
     h.currentPrice = r.mv;
     h.lastUpdate = ov.querySelector('#eDate').value || '';
@@ -4499,6 +4543,8 @@ function bindEvents() {
     renderTransactions();
   };
   el('txFilter').onchange = e => { txFilterCode = e.target.value; renderTransactions(); };
+  if (el('hideTTx')) el('hideTTx').onchange = e => { state.settings.hideT = !!e.target.checked; save(); renderTransactions(); };
+  if (el('hideTKline')) { el('hideTKline').checked = !!(state.settings && state.settings.hideTKline); el('hideTKline').onchange = e => { state.settings.hideTKline = !!e.target.checked; save(); renderKlines(); }; }
 }
 function bindKlineKeys() {
   document.addEventListener('keydown', e => {
@@ -4549,19 +4595,30 @@ function bindHoldingsClick() {
 /* v0.27.1：翻转某条流水的标记（浅蓝底，用于区分短线/T 操作）。
    只就地切换该行 class（不重绘整表，消除 v0.27.0 双击标记的卡顿），再持久化。
    双击/双点识别已废弃——改为行内「T」按钮单击切换。 */
-function toggleTxFlag(id, btn) {
+/* v0.28.0：T/短 互斥标记。冲突提示先取消另一标记。*/
+function toggleTxMark(id, want) {
   const t = state.transactions.find(x => x.id === id);
   if (!t) return;
-  t.flag = !t.flag;
-  const tr = btn && btn.closest ? btn.closest('tr[data-id]') : null;
-  if (tr) tr.classList.toggle('tx-flag', !!t.flag);
-  if (btn && btn.classList) btn.classList.toggle('on', !!t.flag);
+  const cur = txMarkOf(t);
+  if (cur === want) { t.mark = ''; t.flag = false; }
+  else if (cur && cur !== want) { toast('请先取消' + (cur === 'T' ? '【T】' : '【短线】') + '标记'); return; }
+  else { t.mark = want; t.flag = (want === 'T'); }
   save();
+  if (state.settings && state.settings.hideT && (want === 'T' || cur === 'T')) { renderTransactions(); return; }
+  const tr = el('txBody') ? el('txBody').querySelector('tr[data-id="' + id + '"]') : null;
+  if (tr) { tr.classList.toggle('tx-flag', t.mark === 'T'); tr.classList.toggle('tx-flag-s', t.mark === 'S'); }
+  const tb = tr && tr.querySelector('[data-t="' + id + '"]');
+  const sb = tr && tr.querySelector('[data-s="' + id + '"]');
+  if (tb) { tb.classList.toggle('on', t.mark === 'T'); tb.setAttribute('aria-pressed', t.mark === 'T'); }
+  if (sb) { sb.classList.toggle('on', t.mark === 'S'); sb.setAttribute('aria-pressed', t.mark === 'S'); }
+  const st = el('txStats'); if (st) st.innerHTML = txStatsHTML();
 }
 function bindTxClick() {
   el('txBody').addEventListener('click', e => {
     const tf = e.target.closest('[data-t]');
-    if (tf) { toggleTxFlag(tf.dataset.t, tf); return; }
+    if (tf) { toggleTxMark(tf.dataset.t, 'T'); return; }
+    const sf = e.target.closest('[data-s]');
+    if (sf) { toggleTxMark(sf.dataset.s, 'S'); return; }
     const edit = e.target.closest('[data-edit]');
     if (edit) openEditTxModal(edit.dataset.edit);
   });
@@ -4678,6 +4735,9 @@ async function doLogin() {
   } finally {
     el('btnLogin').disabled = false;
   }
+  st.hideT = !!st.hideT;
+  st.hideTKline = st.hideTKline !== false;
+
 }
 
 initMkBubbleDelegation();
