@@ -724,7 +724,7 @@ const SUPABASE_TABLE = 'investment_data';
 const SUPABASE_URL = 'https://gqjbtbxtkiptjeryqawd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_xAbx5HkUJCMssWBtPWzgCw_9UDQNrc2';
 const MONITOR_SECRET = 'mon_19850915!888888'; // 定投参考：与 Supabase Edge Function 的 MONITOR_SECRET 一致（防滥用共享串，非保密）
-const BUILD = 'v0.28.7-20261116'; // 页面构建标识：部署后看页脚/右上角即可确认浏览器跑的是哪一版
+const BUILD = 'v0.28.8-20261117'; // 页面构建标识：部署后看页脚/右上角即可确认浏览器跑的是哪一版
 const PRE_ADOPT_KEY = 'invPlatformData_v1_pre_adopt'; // 云端覆盖本地前的自动快照，可手动找回
 const FEE_RATE_ETF = 0.0001;
 const FEE_RATE_STOCK = 0.00013;
@@ -821,6 +821,30 @@ function shortDate(d) {
   if (!d) return '未更新';
   const parts = String(d).split('-');
   return parts.length === 3 ? parts[1] + '-' + parts[2] : d;
+}
+function pad2(n) { return String(n).padStart(2, '0'); }
+function nowTradeTime() {
+  const d = new Date();
+  const mins = d.getHours() * 60 + d.getMinutes();
+  if (mins < 9 * 60 + 30) return '09:30';
+  if (mins <= 11 * 60 + 30) return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  if (mins < 13 * 60) return '11:30';
+  if (mins <= 15 * 60) return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  return '15:00';
+}
+function tradeTimeDefaultForDate(dateValue) {
+  return dateValue && dateValue !== today() ? '15:00' : nowTradeTime();
+}
+function validTradeTime(value) {
+  const m = /^(\d{2}):(\d{2})$/.exec(String(value || ''));
+  if (!m) return false;
+  const mins = Number(m[1]) * 60 + Number(m[2]);
+  return (mins >= 9 * 60 + 30 && mins <= 11 * 60 + 30)
+    || (mins >= 13 * 60 && mins <= 15 * 60);
+}
+function normalizeTradeTime(value) {
+  const text = String(value == null ? '' : value).trim().slice(0, 5);
+  return validTradeTime(text) ? text : '';
 }
 function calcFee(type, isBuy, amount) {
   if (type === 'fund') return 0;
@@ -1266,6 +1290,7 @@ function opInfo(t) {
 function pushTx(t) {
   t.id = uid();
   t.date = t.date || today();
+  t.time = normalizeTradeTime(t.time);
   state.transactions.push(t);
 }
 function applyTxOnHolding(h, t) {
@@ -1294,17 +1319,17 @@ function undoTxOnHolding(h, t) {
     h.avgCost = h.shares > 0 ? cost / h.shares : 0;
   }
 }
-function applyBuy(h, s, p, f, note, date) {
+function applyBuy(h, s, p, f, note, date, time) {
   const amount = round2(s * p);
   applyTxOnHolding(h, { type: 'buy', shares: s, price: p, amount, fee: f });
   h.cleared = false;
-  pushTx({ holdingId: h.id, type: 'buy', shares: s, price: p, amount, fee: f, date, note: note || '' });
+  pushTx({ holdingId: h.id, type: 'buy', shares: s, price: p, amount, fee: f, date, time, note: note || '' });
 }
-function applySell(h, s, p, f, note, clearance, date) {
+function applySell(h, s, p, f, note, clearance, date, time) {
   const amount = round2(s * p);
   applyTxOnHolding(h, { type: 'sell', shares: s, price: p, amount, fee: f });
   if ((h.shares || 0) <= 0) h.cleared = true;
-  pushTx({ holdingId: h.id, type: 'sell', shares: s, price: p, amount, fee: f, date, note: note || '', clearance: !!clearance });
+  pushTx({ holdingId: h.id, type: 'sell', shares: s, price: p, amount, fee: f, date, time, note: note || '', clearance: !!clearance });
 }
 
 function renderSummary() {
@@ -1627,6 +1652,7 @@ function fieldHTML(o) {
     '<input id="' + o.id + '" type="' + (o.type || 'text') + '" value="' + esc(o.value == null ? '' : o.value) + '"' +
     (o.step ? ' step="' + o.step + '"' : '') +
     (o.min !== undefined ? ' min="' + o.min + '"' : '') +
+    (o.max !== undefined ? ' max="' + o.max + '"' : '') +
     (o.readonly ? ' readonly' : '') +
     (o.maxlen ? ' maxlength="' + o.maxlen + '"' : '') +
     (o.placeholder ? ' placeholder="' + esc(o.placeholder) + '"' : '') +
@@ -1679,7 +1705,8 @@ function openTradeModal(id, mode) {
     '<div class="form-grid">' +
       fieldHTML({ label: verb + '单价', id: 'tPrice', type: 'number', value: h.currentPrice > 0 ? h.currentPrice : '', step: '0.001', min: 0 }) +
       fieldHTML({ label: '数量（股）', id: 'tQty', type: 'number', value: '', step: '1', min: 0 }) +
-      fieldHTML({ label: '日期', id: 'tDate', type: 'date', value: today() }) +
+      fieldHTML({ label: '日期', id: 'tDate', type: 'date', value: today(), max: today() }) +
+      fieldHTML({ label: '交易时间', id: 'tTime', type: 'time', value: nowTradeTime() }) +
       fieldHTML({ label: '手续费（自动计算）', id: 'tFee', value: '0.00', readonly: true }) +
       fieldHTML({ label: '备注（选填）', id: 'tNote', span: true }) +
     '</div>' +
@@ -1691,8 +1718,10 @@ function openTradeModal(id, mode) {
           '<button class="btn ' + (isBuy ? 'buy-solid' : 'sell-solid') + '" data-go>确认' + verb + '</button>'
   });
   const qty = ov.querySelector('#tQty'), price = ov.querySelector('#tPrice'),
-        fee = ov.querySelector('#tFee'), note = ov.querySelector('#tNote');
+        fee = ov.querySelector('#tFee'), note = ov.querySelector('#tNote'),
+        dateInput = ov.querySelector('#tDate'), timeInput = ov.querySelector('#tTime');
   bindFeeCalc(qty, price, fee, () => h.type, () => isBuy);
+  dateInput.onchange = () => { timeInput.value = tradeTimeDefaultForDate(dateInput.value); };
   ov.querySelector('[data-x]').onclick = ov.close;
   ov.querySelector('[data-go]').onclick = () => {
     const s = parseFloat(qty.value), p = parseFloat(price.value);
@@ -1700,11 +1729,14 @@ function openTradeModal(id, mode) {
     let msg = checkShares(s);
     if (!msg && !isBuy && s > h.shares + 1e-9) msg = '卖出数量不能超过当前持股 ' + fmtShares(h.shares, h.type);
     if (!msg && !(p > 0)) msg = '请输入正确的价格';
+    if (!msg && dateInput.value > today()) msg = '交易日期不能晚于今天';
+    if (!msg && !validTradeTime(timeInput.value)) msg = '交易时间需在 09:30–11:30 或 13:00–15:00';
     if (msg) { errEl.textContent = msg; return; }
     const f = calcFee(h.type, isBuy, round2(s * p));
-    const date = ov.querySelector('#tDate').value || today();
-    if (isBuy) applyBuy(h, s, p, f, note.value.trim(), date);
-    else applySell(h, s, p, f, note.value.trim(), false, date);
+    const date = dateInput.value || today();
+    const time = timeInput.value;
+    if (isBuy) applyBuy(h, s, p, f, note.value.trim(), date, time);
+    else applySell(h, s, p, f, note.value.trim(), false, date, time);
     save();
     renderAll();
     ov.close();
@@ -1721,7 +1753,8 @@ function openNewHoldingModal() {
       fieldHTML({ label: '单价', id: 'nPrice', itemId: 'nPriceItem', type: 'number', step: '0.001', min: 0 }) +
       fieldHTML({ label: '买入数量（股）', id: 'nQty', itemId: 'nQtyItem', type: 'number', step: '1', min: 0 }) +
       fieldHTML({ label: '累计投入成本', id: 'nCost', itemId: 'nCostItem', type: 'number', step: '0.01', min: 0, itemStyle: 'display:none' }) +
-      fieldHTML({ label: '日期', id: 'nDate', type: 'date', value: today() }) +
+      fieldHTML({ label: '日期', id: 'nDate', type: 'date', value: today(), max: today() }) +
+      fieldHTML({ label: '交易时间', id: 'nTime', type: 'time', value: nowTradeTime() }) +
       fieldHTML({ label: '手续费（自动计算）', id: 'nFee', itemId: 'nFeeItem', value: '0.00', readonly: true }) +
       fieldHTML({ label: '备注（选填）', id: 'nNote', span: true }) +
     '</div>' +
@@ -1732,9 +1765,11 @@ function openNewHoldingModal() {
     foot: '<button class="btn" data-x>取消</button><button class="btn primary" data-go>确认创建</button>'
   });
   const typeSel = ov.querySelector('#nType'), qty = ov.querySelector('#nQty'),
-        price = ov.querySelector('#nPrice'), fee = ov.querySelector('#nFee');
+        price = ov.querySelector('#nPrice'), fee = ov.querySelector('#nFee'),
+        dateInput = ov.querySelector('#nDate'), timeInput = ov.querySelector('#nTime');
   const item = sid => ov.querySelector('#' + sid);
   bindFeeCalc(qty, price, fee, () => typeSel.value, () => true);
+  dateInput.onchange = () => { timeInput.value = tradeTimeDefaultForDate(dateInput.value); };
   typeSel.onchange = () => {
     const fund = typeSel.value === 'fund';
     ['nPriceItem', 'nQtyItem', 'nFeeItem'].forEach(sid => { item(sid).style.display = fund ? 'none' : ''; });
@@ -1759,6 +1794,8 @@ function openNewHoldingModal() {
       p = parseFloat(price.value);
       msg = checkShares(s) || (!(p > 0) ? '请输入正确的单价' : '');
     }
+    if (!msg && dateInput.value > today()) msg = '交易日期不能晚于今天';
+    if (!msg && type !== 'fund' && !validTradeTime(timeInput.value)) msg = '交易时间需在 09:30–11:30 或 13:00–15:00';
     if (msg) { errEl.textContent = msg; return; }
     let h;
     if (type === 'fund') {
@@ -1776,7 +1813,8 @@ function openNewHoldingModal() {
       };
       state.holdings.push(h);
       const f = calcFee(h.type, true, round2(s * p));
-      applyBuy(h, s, p, f, ov.querySelector('#nNote').value.trim(), ov.querySelector('#nDate').value || today());
+      applyBuy(h, s, p, f, ov.querySelector('#nNote').value.trim(),
+        dateInput.value || today(), timeInput.value);
     }
     save();
     renderAll();
@@ -1854,7 +1892,8 @@ function openEditTxModal(txId) {
       '<div class="form-item"><label>操作</label><select id="xType"><option value="buy"' + (t.type === 'buy' ? ' selected' : '') + '>买入</option><option value="sell"' + (t.type === 'sell' ? ' selected' : '') + '>卖出</option></select></div>' +
       fieldHTML({ label: '数量（股）', id: 'xQty', type: 'number', value: t.shares, step: '1', min: 0 }) +
       fieldHTML({ label: '单价', id: 'xPrice', type: 'number', value: t.price, step: '0.001', min: 0 }) +
-      fieldHTML({ label: '日期', id: 'xDate', type: 'date', value: t.date || today() }) +
+      fieldHTML({ label: '日期', id: 'xDate', type: 'date', value: t.date || today(), max: today() }) +
+      fieldHTML({ label: '交易时间（旧记录可留空）', id: 'xTime', type: 'time', value: t.time || '' }) +
       fieldHTML({ label: '手续费（自动计算）', id: 'xFee', value: (t.fee || 0).toFixed(2), readonly: true }) +
       fieldHTML({ label: '备注', id: 'xNote', span: true, value: t.note || '' }) +
     '</div>' +
@@ -1878,8 +1917,12 @@ function openEditTxModal(txId) {
     const errEl = ov.querySelector('#xErr');
     const type = typeSel.value;
     const s = parseFloat(qty.value), p = parseFloat(price.value);
+    const dateValue = ov.querySelector('#xDate').value || today();
+    const timeValue = ov.querySelector('#xTime').value;
     let msg = checkShares(s);
     if (!msg && !(p > 0)) msg = '请输入正确的价格';
+    if (!msg && dateValue > today()) msg = '交易日期不能晚于今天';
+    if (!msg && timeValue && !validTradeTime(timeValue)) msg = '交易时间需在 09:30–11:30 或 13:00–15:00';
     if (msg) { errEl.textContent = msg; return; }
     const amount = round2(s * p);
     const f = calcFee(h.type, type === 'buy', amount);
@@ -1901,7 +1944,8 @@ function openEditTxModal(txId) {
     t.price = p;
     t.amount = amount;
     t.fee = f;
-    t.date = ov.querySelector('#xDate').value || today();
+    t.date = dateValue;
+    t.time = normalizeTradeTime(timeValue);
     t.note = ov.querySelector('#xNote').value.trim();
     t.clearance = type === 'sell' ? !!t.clearance : false;
     save();
@@ -3048,6 +3092,7 @@ function normalizeImport(data) {
       amount: Number(t.amount) || 0,
       fee: Number(t.fee) || 0,
       date: String(t.date || ''),
+      time: normalizeTradeTime(t.time),
       note: String(t.note || ''),
       clearance: !!t.clearance,
       mark: _m,
