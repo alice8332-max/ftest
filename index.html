@@ -724,7 +724,7 @@ const SUPABASE_TABLE = 'investment_data';
 const SUPABASE_URL = 'https://gqjbtbxtkiptjeryqawd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_xAbx5HkUJCMssWBtPWzgCw_9UDQNrc2';
 const MONITOR_SECRET = 'mon_19850915!888888'; // 定投参考：与 Supabase Edge Function 的 MONITOR_SECRET 一致（防滥用共享串，非保密）
-const BUILD = 'v0.28.8-20261117'; // 页面构建标识：部署后看页脚/右上角即可确认浏览器跑的是哪一版
+const BUILD = 'v0.28.9-20261118'; // 页面构建标识：部署后看页脚/右上角即可确认浏览器跑的是哪一版
 const PRE_ADOPT_KEY = 'invPlatformData_v1_pre_adopt'; // 云端覆盖本地前的自动快照，可手动找回
 const FEE_RATE_ETF = 0.0001;
 const FEE_RATE_STOCK = 0.00013;
@@ -1478,18 +1478,19 @@ function txRows(ignoreHideT) {
 function txStatsHTML() {
   const inFilter = t => !txFilterCode || codeOf(t) === txFilterCode;
   const inFilterH = h => !txFilterCode || h.code === txFilterCode;
-  let tSum = 0;
+  let tSum = 0, tFee = 0;
   const tByH = {};
   state.transactions.forEach(t => {
     if (!inFilter(t)) return;
     if (txMarkOf(t) === 'T') {
       tSum += (t.type === 'buy' ? 1 : -1) * (Number(t.amount) || 0);
+      tFee += Number(t.fee) || 0;
       tByH[t.holdingId] = (tByH[t.holdingId] || 0) + (t.type === 'buy' ? 1 : -1) * (Number(t.shares) || 0);
     }
   });
   let tPairBad = false;
   Object.keys(tByH).forEach(k => { if (Math.abs(tByH[k]) > 1e-6) tPairBad = true; });
-  const profit = -tSum;
+  const profit = -tSum - tFee;
   const tVal = (profit > 0 ? '+' : profit < 0 ? '-' : '') + fmtMoney(Math.abs(profit));
   const tCls = profit > 0 ? 'up' : profit < 0 ? 'down' : '';
   const tBadge = tPairBad ? ' <span class="warn" title="配对问题：存在T标记股数未对平">!</span>' : '';
@@ -1504,7 +1505,7 @@ function txStatsHTML() {
   const denom = holdShares - shortShares;
   let sp = '--';
   if (denom > 1e-9) { const pct = shortShares / denom * 100; sp = (pct > 0 ? '+' : '') + pct.toFixed(1) + '%'; }
-  return '<span class="tx-stat"><span class="k">T仓盈亏</span><span class="v' + (tCls ? ' ' + tCls : '') + '">' + tVal + '</span>' + tBadge + '</span>' +
+  return '<span class="tx-stat" title="已扣除T笔买卖手续费"><span class="k">T仓盈亏</span><span class="v' + (tCls ? ' ' + tCls : '') + '">' + tVal + '</span>' + tBadge + '</span>' +
     '<span class="tx-stat"><span class="k">短线占比</span><span class="v">' + sp + '</span></span>';
 }
 function renderTransactions() {
